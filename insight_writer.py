@@ -53,7 +53,7 @@ def write_insight_bin(filename, pts, tracks):
     frames=int(np.max(pts[:,0]))
     
     fp = open(filename, "wb")
-    _putV(fp, "4s", "M425")
+    _putV(fp, "4s", b'M425')
     _putV(fp, "i", frames)
     _putV(fp, "i", 6) # *int32 ;% identified = 2, traced = 3, tracked = 4, stormed = 6
     _putV(fp, "i", 0)

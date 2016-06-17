@@ -13,11 +13,14 @@ Algorithm:
 """
 
 import numpy as np
+import os
 import global_vars as g
 from process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
 from PyQt4.QtCore import QUrl, QRect
-from PyQt4.QtGui import qApp, QDesktopServices
+from PyQt4.QtGui import qApp, QDesktopServices, QIcon, QHBoxLayout
+from PyQt4 import uic
 from window import Window
+from process.file_ import save_file_gui
 from .insight_writer import write_insight_bin
 from .gaussianFitting import fitGaussian, gaussian, generate_gaussian
 from .particle_simulator import simulate_particles
@@ -111,21 +114,23 @@ def cutout(pt, Movie, width):
     return I, corner
 
 
-def refine_pts(pts, Movie):
+def refine_pts(pts, blur_window, sigma, amplitude):
     new_pts = []
     old_frame = -1
     for pt in pts:
         new_frame = int(pt[0])
         if old_frame != new_frame:
-            print('Frame {}'.format(new_frame))
             old_frame = new_frame
+            blur_window.imageview.setCurrentIndex(old_frame)
+            qApp.processEvents()
+            if g.halt_current_computation:
+                g.halt_current_computation = False
+                return new_pts, False
         width = 9
         mid = int(np.floor(width / 2))
-        I, corner = cutout(pt, Movie, width)
-        xorigin = mid;
-        yorigin = mid;
-        sigma = 1.1;
-        amplitude = 50
+        I, corner = cutout(pt, blur_window.image, width)
+        xorigin = mid
+        yorigin = mid
         p0 = [xorigin, yorigin, sigma, amplitude]
         fit_bounds = [(0, 9), (0, 9), (0, 4), (0, 1000)]
         p, I_fit, _ = fitGaussian(I, p0, fit_bounds)
@@ -134,7 +139,7 @@ def refine_pts(pts, Movie):
         #                t,  old x, old y, new_x, new_y, sigma, amplitude
         new_pts.append([pt[0], pt[1], pt[2], xfit, yfit, p[2], p[3]])
     new_pts = np.array(new_pts)
-    return new_pts
+    return new_pts, True
 
 
 class Points(object):
@@ -189,24 +194,121 @@ class Points(object):
         return track
 
 
-class Pynsight(BaseProcess):
+class Pynsight():
     """pynsight()
     Tracks particles from STORM microscopy
 
     """
 
     def __init__(self):
-        super().__init__()
+        self.refining_points = False
+        self.pts_refined = None
+        self.txy_pts = None
 
     def gui(self):
-        self.gui_reset()
-        super().gui()
+        gui = uic.loadUi(os.path.join(os.getcwd(), 'plugins', 'pynsight', 'pynsight.ui'))
+        self.algorithm_gui = gui
+        gui.setWindowIcon(QIcon('images/favicon.png'))
+        gui.show()
+        self.binary_window_selector = WindowSelector()
+        gui.gridLayout_11.addWidget(self.binary_window_selector)
+        gui.getPointsButton.pressed.connect(self.getPoints)
+        gui.showPointsButton2.pressed.connect(self.showPoints_refined)
+        gui.showPointsButton.pressed.connect(self.showPoints_unrefined)
+        self.blurred_window_selector = WindowSelector()
+        gui.gridLayout_9.addWidget(self.blurred_window_selector)
+        gui.refine_points_button.pressed.connect(self.refinePoints)
+        gui.link_points_button.pressed.connect(self.linkPoints)
+        gui.showTracksButton.pressed.connect(self.showTracks)
+        gui.save_insight_button.pressed.connect(self.saveInsight)
 
-    def __call__(self, keepSourceWindow=False):
-        g.m.statusBar().showMessage('Performing {}...'.format(self.__name__))
-        g.m.statusBar().showMessage('Finished with {}.'.format(self.__name__))
-        return None
+    def getPoints(self):
+        self.txy_pts = get_points(pynsight.binary_window_selector.window.image)
+        self.algorithm_gui.showPointsButton.setEnabled(True)
+        nPoints = len(self.txy_pts)
+        self.algorithm_gui.num_pts_label.setText(str(nPoints))
+
+    def refinePoints(self):
+        if self.txy_pts is None:
+            return None
+        if self.refining_points:
+            g.halt_current_computation = True
+        else:
+            self.refining_points = True
+            blur_window = pynsight.blurred_window_selector.window
+            sigma = self.algorithm_gui.gauss_sigma_spinbox.value()
+            amp = self.algorithm_gui.gauss_amp_spinbox.value()
+            self.pts_refined, completed = refine_pts(self.txy_pts, blur_window, sigma, amp)
+            self.refining_points = False
+            if not completed:
+                print('The refinePoints function was interrupted.')
+            else:
+                self.algorithm_gui.showPointsButton2.setEnabled(True)
+
+    def linkPoints(self):
+        if self.pts_refined is None:
+            return None
+        txy_pts_refined = np.vstack((self.pts_refined[:, 0], self.pts_refined[:, 3], self.pts_refined[:, 4])).T
+        self.points = Points(txy_pts_refined)
+        self.points.link_pts()
+        tracks = self.points.tracks
+        nTracks = len(tracks)
+        self.algorithm_gui.num_tracks_label.setText(str(nTracks))
+        self.algorithm_gui.showTracksButton.setEnabled(True)
+
+    def showPoints_unrefined(self):
+        g.m.currentWindow.scatterPoints = [[] for _ in np.arange(g.m.currentWindow.mt)]
+        for pt in self.txy_pts:
+            t = int(pt[0])
+            if g.m.currentWindow.mt == 1:
+                t = 0
+            g.m.currentWindow.scatterPoints[t].append([pt[1]+.5, pt[2]+.5])
+        t = g.m.currentWindow.currentIndex
+        g.m.currentWindow.scatterPlot.setPoints(pos=g.m.currentWindow.scatterPoints[t])
+
+    def showPoints_refined(self):
+        txy_pts_refined = np.vstack((self.pts_refined[:, 0], self.pts_refined[:, 3], self.pts_refined[:, 4])).T
+        g.m.currentWindow.scatterPoints = [[] for _ in np.arange(g.m.currentWindow.mt)]
+        for pt in txy_pts_refined:
+            t = int(pt[0])
+            if g.m.currentWindow.mt == 1:
+                t = 0
+            g.m.currentWindow.scatterPoints[t].append([pt[1]+.5, pt[2]+.5])
+        t = g.m.currentWindow.currentIndex
+        g.m.currentWindow.scatterPlot.setPoints(pos=g.m.currentWindow.scatterPoints[t])
+
+    def showTracks(self):
+        print('showTracks not implemented... yet')
+
+    def saveInsight(self):
+        tracks = self.points.tracks
+        kwargs = {'pts': self.pts_refined, 'tracks':tracks}
+        save_file_gui(write_insight_bin, '.bin', 'Save File', kwargs)
+
 
 pynsight = Pynsight()
+
+
+if __name__ == '__main__':
+    from plugins.pynsight.pynsight import *
+    A, true_pts = simulate_particles()
+    data_window = Window(A)
+    data_window.setName('Data Window (F/F0)')
+    blur_window = gaussian_blur(2, norm_edges=True, keepSourceWindow=True)
+    blur_window.setName('Blurred Window')
+    binary_window = threshold(.7, keepSourceWindow=True)
+    binary_window.setName('Binary Window')
+
+
+    txy_pts = get_points(g.m.currentWindow.image)
+    np.savetxt(r'C:\Users\kyle\Desktop\simulated.txt', txy_pts)
+    refined_pts = refine_pts(txy_pts, blur_window.image)
+    refined_pts_txy = np.vstack((refined_pts[:, 0], refined_pts[:, 3], refined_pts[:, 4])).T
+    p = Points(refined_pts_txy)
+    p.link_pts()
+    tracks = p.tracks
+
+    filename = r'C:\Users\kyle\Desktop\test_flika.bin'
+    write_insight_bin(filename, refined_pts, tracks)
 
 
