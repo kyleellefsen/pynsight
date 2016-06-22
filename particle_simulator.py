@@ -96,8 +96,11 @@ def simulate_particles(mt=500, mx=256, my=256):
                 continue  # remove the particle
             else:
                 x, y = particle
-                x += random.randn()
-                y += random.randn()
+                delta = 1.0  # Delta determines the "speed" of the Brownian motion.  The random variable of the position at time t, X(t), has a normal distribution whose mean is the position at time t=0 and whose variance is delta**2*t.
+                dt = 1.0  # Time Step
+
+                x += random.randn() * delta**2 * dt
+                y += random.randn() * delta**2 * dt
                 current_particles.append([x, y])
                 A, true_pt = addParticle(A, frame, x, y, amp, mx, my)
                 true_pts.append(true_pt)

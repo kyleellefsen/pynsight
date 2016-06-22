@@ -35,17 +35,17 @@ def getMolecules(pts,tracks):
     for track in tracks:
         track_length = len(track)
         for i, pt in enumerate(track):
-            data[pt]['fr']=pts[pt][0]
-            data[pt]['x' ]=pts[pt][1]
-            data[pt]['y' ]=pts[pt][2]
-            data[pt]['xc']=pts[pt][3]
-            data[pt]['yc']=pts[pt][4]
-            data[pt]['w' ]=pts[pt][5]
-            data[pt]['h' ]=pts[pt][6]
-            if i+1==track_length:
-                data[pt]['lk']=-1
+            data[pt]['fr'] = pts[pt][0]
+            data[pt]['x' ] = pts[pt][3]
+            data[pt]['y' ] = pts[pt][4]
+            data[pt]['xc'] = pts[pt][3]
+            data[pt]['yc'] = pts[pt][4]
+            data[pt]['w' ] = pts[pt][5]
+            data[pt]['h' ] = pts[pt][6]
+            if i+1 == track_length:
+                data[pt]['lk'] = -1
             else:
-                data[pt]['lk']=track[i+1]
+                data[pt]['lk'] = track[i+1]
     return data
     
     

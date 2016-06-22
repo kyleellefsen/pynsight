@@ -16,8 +16,8 @@ import numpy as np
 import os
 import global_vars as g
 from process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
-from PyQt4.QtCore import QUrl, QRect
-from PyQt4.QtGui import qApp, QDesktopServices, QIcon, QHBoxLayout
+from PyQt4.QtCore import QUrl, QRect, QPointF, Qt
+from PyQt4.QtGui import qApp, QDesktopServices, QIcon, QHBoxLayout, QPainterPath, QGraphicsPathItem, QPen, QColor
 from PyQt4 import uic
 from window import Window
 from process.file_ import save_file_gui
@@ -99,6 +99,7 @@ def get_points(I):
 def cutout(pt, Movie, width):
     assert width % 2 == 1  # mx must be odd
     t, x, y = pt
+    t=int(t)
     mid = int(np.floor(width / 2))
     x0 = int(x - mid)
     x1 = int(x + mid)
@@ -115,6 +116,8 @@ def cutout(pt, Movie, width):
 
 
 def refine_pts(pts, blur_window, sigma, amplitude):
+    if blur_window is None:
+        return None, False
     new_pts = []
     old_frame = -1
     for pt in pts:
@@ -150,6 +153,8 @@ class Points(object):
         self.pts_remaining = []
         self.pts_idx_by_frame = []  # this array has the same structure as points_by_array but contains the index of the original txy_pts argument
         curr_idx = 0
+        self.window = None
+        self.pathitems = []
 
         for frame in np.arange(0, np.max(self.frames) + 1):
             pos = txy_pts[txy_pts[:, 0] == frame, 1:]
@@ -159,22 +164,21 @@ class Points(object):
             curr_idx = old_curr_idx + len(pos)
             self.pts_idx_by_frame.append(np.arange(old_curr_idx, curr_idx))
 
-    def link_pts(self):
+    def link_pts(self, maxFramesSkipped, maxDistance):
         tracks = []
         for frame in self.frames:
-            print('Linking points on frame {}'.format(frame))
             for pt_idx in np.where(self.pts_remaining[frame])[0]:
                 self.pts_remaining[frame][pt_idx] = False
                 abs_pt_idx = self.pts_idx_by_frame[frame][pt_idx]
                 track = [abs_pt_idx]
-                track = self.extend_track(track)
+                track = self.extend_track(track, maxFramesSkipped, maxDistance)
                 tracks.append(track)
         self.tracks = tracks
 
-    def extend_track(self, track):
+    def extend_track(self, track, maxFramesSkipped, maxDistance):
         pt = self.txy_pts[track[-1]]
         # pt can move less than two pixels in one frame, two frames can be skipped
-        for dt in [1, 2, 3]:
+        for dt in np.arange(maxFramesSkipped)+1:
             frame = int(pt[0]) + dt
             if frame >= len(self.pts_remaining):
                 return track
@@ -184,14 +188,51 @@ class Points(object):
                 continue
             else:
                 distances = np.sqrt(np.sum((self.pts_by_frame[frame][candidates] - pt[1:]) ** 2, 1))
-            if any(distances < 3):
+            if any(distances < maxDistance):
                 next_pt_idx = np.where(candidates)[0][np.argmin(distances)]
                 abs_next_pt_idx = self.pts_idx_by_frame[frame][next_pt_idx]
                 track.append(abs_next_pt_idx)
                 self.pts_remaining[frame][next_pt_idx] = False
-                track = self.extend_track(track)
+                track = self.extend_track(track, maxFramesSkipped, maxDistance)
                 return track
         return track
+
+    def get_tracks_by_frame(self):
+        tracks_by_frame = [[] for frame in np.arange(np.max(self.frames)+1)]
+        for i, track in enumerate(self.tracks):
+            frames = self.txy_pts[track][:,0].astype(np.int)
+            for frame in frames:
+                tracks_by_frame[frame].append(i)
+        self.tracks_by_frame = tracks_by_frame
+
+    def clearTracks(self):
+        for pathitem in self.pathitems:
+            self.window.imageview.view.removeItem(pathitem)
+        self.pathitems = []
+
+    def showTracks(self):
+        # clear self.pathitems
+        self.clearTracks()
+
+        frame = self.window.imageview.currentIndex
+        if frame<len(self.tracks_by_frame):
+            tracks = self.tracks_by_frame[frame]
+            pen = QPen(Qt.green, .4)
+            pen.setCosmetic(True)
+            for track_idx in tracks:
+                pathitem = QGraphicsPathItem(self.window.imageview.view)
+                pathitem.setPen(pen)
+                self.window.imageview.view.addItem(pathitem)
+                self.pathitems.append(pathitem)
+                pts = self.txy_pts[self.tracks[track_idx]]
+                x = pts[:, 1]+.5; y = pts[:,2]+.5
+                path = QPainterPath(QPointF(x[0],y[0]))
+                for i in np.arange(1, len(pts)):
+                    path.lineTo(QPointF(x[i],y[i]))
+                pathitem.setPath(path)
+
+
+
 
 
 class Pynsight():
@@ -204,6 +245,7 @@ class Pynsight():
         self.refining_points = False
         self.pts_refined = None
         self.txy_pts = None
+        self.tracks_visible = False
 
     def gui(self):
         gui = uic.loadUi(os.path.join(os.getcwd(), 'plugins', 'pynsight', 'pynsight.ui'))
@@ -223,7 +265,7 @@ class Pynsight():
         gui.save_insight_button.pressed.connect(self.saveInsight)
 
     def getPoints(self):
-        self.txy_pts = get_points(pynsight.binary_window_selector.window.image)
+        self.txy_pts = get_points(self.binary_window_selector.window.image)
         self.algorithm_gui.showPointsButton.setEnabled(True)
         nPoints = len(self.txy_pts)
         self.algorithm_gui.num_pts_label.setText(str(nPoints))
@@ -250,11 +292,14 @@ class Pynsight():
             return None
         txy_pts_refined = np.vstack((self.pts_refined[:, 0], self.pts_refined[:, 3], self.pts_refined[:, 4])).T
         self.points = Points(txy_pts_refined)
-        self.points.link_pts()
+        maxFramesSkipped = self.algorithm_gui.maxFramesSkippedSpinBox.value()
+        maxDistance = self.algorithm_gui.maxDistanceSpinBox.value()
+        self.points.link_pts(maxFramesSkipped, maxDistance)
         tracks = self.points.tracks
         nTracks = len(tracks)
         self.algorithm_gui.num_tracks_label.setText(str(nTracks))
         self.algorithm_gui.showTracksButton.setEnabled(True)
+        self.points.get_tracks_by_frame()
 
     def showPoints_unrefined(self):
         g.m.currentWindow.scatterPoints = [[] for _ in np.arange(g.m.currentWindow.mt)]
@@ -262,9 +307,11 @@ class Pynsight():
             t = int(pt[0])
             if g.m.currentWindow.mt == 1:
                 t = 0
-            g.m.currentWindow.scatterPoints[t].append([pt[1]+.5, pt[2]+.5])
-        t = g.m.currentWindow.currentIndex
-        g.m.currentWindow.scatterPlot.setPoints(pos=g.m.currentWindow.scatterPoints[t])
+            pointSize = g.m.settings['point_size']
+            pointColor = QColor(g.m.settings['point_color'])
+            position = [pt[1]+.5, pt[2]+.5, pointColor, pointSize]
+            g.m.currentWindow.scatterPoints[t].append(position)
+        g.m.currentWindow.updateindex()
 
     def showPoints_refined(self):
         txy_pts_refined = np.vstack((self.pts_refined[:, 0], self.pts_refined[:, 3], self.pts_refined[:, 4])).T
@@ -273,12 +320,24 @@ class Pynsight():
             t = int(pt[0])
             if g.m.currentWindow.mt == 1:
                 t = 0
-            g.m.currentWindow.scatterPoints[t].append([pt[1]+.5, pt[2]+.5])
-        t = g.m.currentWindow.currentIndex
-        g.m.currentWindow.scatterPlot.setPoints(pos=g.m.currentWindow.scatterPoints[t])
+            pointSize = g.m.settings['point_size']
+            pointColor = QColor(g.m.settings['point_color'])
+            position = [pt[1] + .5, pt[2] + .5, pointColor, pointSize]
+            g.m.currentWindow.scatterPoints[t].append(position)
+        g.m.currentWindow.updateindex()
 
     def showTracks(self):
-        print('showTracks not implemented... yet')
+        if not self.tracks_visible:
+            self.points.window = g.m.currentWindow
+            g.m.currentWindow.sigTimeChanged.connect(self.points.showTracks)
+            self.tracks_visible = True
+            self.algorithm_gui.showTracksButton.setText('Hide Tracks')
+            self.points.showTracks()
+        else:
+            g.m.currentWindow.sigTimeChanged.disconnect(self.points.showTracks)
+            self.points.clearTracks()
+            self.tracks_visible = False
+            self.algorithm_gui.showTracksButton.setText('Show Tracks')
 
     def saveInsight(self):
         tracks = self.points.tracks
