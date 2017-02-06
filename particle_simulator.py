@@ -103,14 +103,16 @@ def simulate_particles(mt=500, mx=256, my=256):
                 y += random.randn() * delta**2 * dt
                 current_particles.append([x, y])
                 A, true_pt = addParticle(A, frame, x, y, amp, mx, my)
-                true_pts.append(true_pt)
+                if true_pt is not None:
+                    true_pts.append(true_pt)
         Nparticles_to_add = random.poisson(rate_of_appearance)
         for i in np.arange(Nparticles_to_add):
             x = random.random() * mx
             y = random.random() * my
             current_particles.append([x, y])
             A, true_pt = addParticle(A, frame, x, y, amp, mx, my)
-            true_pts.append(true_pt)
+            if true_pt is not None:
+                true_pts.append(true_pt)
     return A, true_pts
 
 if __name__=='__main__':

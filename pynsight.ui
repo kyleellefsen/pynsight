@@ -11,13 +11,13 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Algorithm GUI</string>
+   <string>Flika - Pynsight Plugin</string>
   </property>
   <layout class="QGridLayout" name="gridLayout_2">
    <item row="0" column="0">
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QTabWidget" name="tabWidget">
+      <widget class="QTabWidget" name="analyze_tab_widget">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
          <horstretch>0</horstretch>
@@ -167,20 +167,27 @@
          </item>
          <item row="2" column="0">
           <layout class="QGridLayout" name="gridLayout_13">
-           <item row="0" column="0">
+           <item row="0" column="1">
             <widget class="QPushButton" name="refine_points_button">
              <property name="text">
               <string>Refine Points</string>
              </property>
             </widget>
            </item>
-           <item row="0" column="1">
+           <item row="0" column="2">
             <widget class="QPushButton" name="showPointsButton2">
              <property name="enabled">
               <bool>false</bool>
              </property>
              <property name="text">
               <string>Show Points</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QPushButton" name="skip_refine_button">
+             <property name="text">
+              <string>Skip Refining Points</string>
              </property>
             </widget>
            </item>
@@ -303,6 +310,50 @@
           </spacer>
          </item>
         </layout>
+       </widget>
+       <widget class="QWidget" name="analyze_tab">
+        <attribute name="title">
+         <string>Analyze</string>
+        </attribute>
+        <widget class="QWidget" name="gridLayoutWidget">
+         <property name="geometry">
+          <rect>
+           <x>10</x>
+           <y>10</y>
+           <width>451</width>
+           <height>171</height>
+          </rect>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_10">
+          <item row="0" column="0">
+           <widget class="QPushButton" name="create_SLD_button">
+            <property name="text">
+             <string>Mean Single Lag Displacement Histogram</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <spacer name="horizontalSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="1" column="0">
+           <widget class="QPushButton" name="create_MSD_button">
+            <property name="text">
+             <string>Mean Squared Displacement Per Lag</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
        </widget>
        <widget class="QWidget" name="tab_4">
         <attribute name="title">

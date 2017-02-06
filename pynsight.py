@@ -16,14 +16,18 @@ import numpy as np
 import os
 import global_vars as g
 from process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
-from PyQt4.QtCore import QUrl, QRect, QPointF, Qt
-from PyQt4.QtGui import qApp, QDesktopServices, QIcon, QHBoxLayout, QPainterPath, QGraphicsPathItem, QPen, QColor
-from PyQt4 import uic
+import pickle
+from qtpy.QtCore import QUrl, QRect, QPointF, Qt
+from qtpy.QtGui import QDesktopServices, QIcon, QPainterPath, QPen, QColor
+from qtpy.QtWidgets import QHBoxLayout, QGraphicsPathItem, qApp
+from qtpy import uic
 from window import Window
 from process.file_ import save_file_gui
 from .insight_writer import write_insight_bin
 from .gaussianFitting import fitGaussian, gaussian, generate_gaussian
 from .particle_simulator import simulate_particles
+from .SLD_histogram import SLD_Histogram
+from .MSD_Plot import MSD_Plot
 
 
 def launch_docs():
@@ -246,6 +250,7 @@ class Pynsight():
         self.pts_refined = None
         self.txy_pts = None
         self.tracks_visible = False
+        self.SLD_histogram = None
 
     def gui(self):
         gui = uic.loadUi(os.path.join(os.getcwd(), 'plugins', 'pynsight', 'pynsight.ui'))
@@ -260,15 +265,21 @@ class Pynsight():
         self.blurred_window_selector = WindowSelector()
         gui.gridLayout_9.addWidget(self.blurred_window_selector)
         gui.refine_points_button.pressed.connect(self.refinePoints)
+        gui.skip_refine_button.pressed.connect(self.skip_refinePoints)
         gui.link_points_button.pressed.connect(self.linkPoints)
         gui.showTracksButton.pressed.connect(self.showTracks)
+        gui.create_SLD_button.pressed.connect(self.create_SLD)
+        gui.create_MSD_button.pressed.connect(self.create_MSD)
         gui.save_insight_button.pressed.connect(self.saveInsight)
 
     def getPoints(self):
-        self.txy_pts = get_points(self.binary_window_selector.window.image)
-        self.algorithm_gui.showPointsButton.setEnabled(True)
-        nPoints = len(self.txy_pts)
-        self.algorithm_gui.num_pts_label.setText(str(nPoints))
+        if self.binary_window_selector.window is None:
+            g.alert('You must select a Binary Window before using it to determine where the points are.')
+        else:
+            self.txy_pts = get_points(self.binary_window_selector.window.image)
+            self.algorithm_gui.showPointsButton.setEnabled(True)
+            nPoints = len(self.txy_pts)
+            self.algorithm_gui.num_pts_label.setText(str(nPoints))
 
     def refinePoints(self):
         if self.txy_pts is None:
@@ -286,6 +297,16 @@ class Pynsight():
                 print('The refinePoints function was interrupted.')
             else:
                 self.algorithm_gui.showPointsButton2.setEnabled(True)
+
+    def skip_refinePoints(self):
+        if self.txy_pts is None:
+            return None
+        new_pts = []
+        for pt in self.txy_pts:
+                        #    t,  old x, old y, new_x, new_y, sigma, amplitude
+            new_pts.append([pt[0], pt[1], pt[2], pt[1], pt[2], -1, -1])
+        self.pts_refined = np.array(new_pts)
+        self.algorithm_gui.showPointsButton2.setEnabled(True)
 
     def linkPoints(self):
         if self.pts_refined is None:
@@ -339,6 +360,11 @@ class Pynsight():
             self.tracks_visible = False
             self.algorithm_gui.showTracksButton.setText('Show Tracks')
 
+    def create_MSD(self):
+        self.MSD_plot = MSD_Plot(self.points)
+    def create_SLD(self):
+        self.SLD_histogram = SLD_Histogram(self.points)
+
     def saveInsight(self):
         tracks = self.points.tracks
         kwargs = {'pts': self.pts_refined, 'tracks':tracks}
@@ -346,6 +372,7 @@ class Pynsight():
 
 
 pynsight = Pynsight()
+g.m.pynsight = pynsight
 
 
 if __name__ == '__main__':
