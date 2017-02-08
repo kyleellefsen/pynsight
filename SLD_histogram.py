@@ -23,7 +23,7 @@ class SLD_Histogram(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel('Only include particles with track lengths between'))
         min_track_spinbox = QtWidgets.QSpinBox()
-        max_track_len = np.max([len(t) for t in self.pynsight.points.tracks])
+        max_track_len = np.max([len(t) for t in self.pynsight_pts.tracks])
         min_track_spinbox.setRange(2, max_track_len)
         min_track_spinbox.valueChanged.connect(self.min_track_spinbox_updated)
         max_track_spinbox = QtWidgets.QSpinBox()
