@@ -8,7 +8,7 @@
 
 ### Installation Instructions ###
 
-Pynsight is a Flika plugin. To install Flika, go [here](https://github.com/flika-org/flika) and follow then instructions. Once Flika is installed, from inside Flika go to Plugins, Plugin Manager, select Pynsight from the list, and press Download. Pynsight will then be available under Plugins. 
+Pynsight is a Flika plugin. To install Flika, go [here](https://github.com/flika-org/flika) and follow the instructions. Once Flika is installed, from inside Flika go to Plugins, Plugin Manager, select Pynsight from the list, and press Download. Pynsight will then be available under Plugins. 
 
 
 ### Sample Script ###
