@@ -5,18 +5,21 @@ from qtpy import QtCore, QtGui, QtWidgets
 from process.BaseProcess import BaseDialog, SliderLabel
 
 class MSD_Plot(QtWidgets.QWidget):
-    def __init__(self, pynsight_pts):
+    def __init__(self, pynsight_pts, microns_per_pixel):
         super(MSD_Plot, self).__init__()
         self.pynsight_pts = pynsight_pts
+        self.microns_per_pixel = microns_per_pixel
         self.nTracksLabel = QtWidgets.QLabel('')
         self.plotWidget = MSDWidget(pynsight_pts, self)
         self.trackLengthsGroup = self.makeTrackLengthsGroup()
         self.SLDFilterGroup = self.makeSLDFilterGroup()
+        self.ExportGroup = self.makeExportGroup()
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.addWidget(self.plotWidget)
         self.layout.addWidget(self.nTracksLabel)
         self.layout.addWidget(self.trackLengthsGroup)
         self.layout.addWidget(self.SLDFilterGroup)
+        self.layout.addWidget(self.ExportGroup)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setWindowTitle('Flika - Pynsight Plugin - MSD')
         self.setWindowIcon(QtGui.QIcon('images/favicon.png'))
@@ -67,6 +70,33 @@ class MSD_Plot(QtWidgets.QWidget):
         SLDFilterGroup.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         return SLDFilterGroup
 
+    def makeExportGroup(self):
+        ExportGroup = QtWidgets.QGroupBox()
+        ExportGroup.setTitle('Export Data')
+        layout = QtWidgets.QHBoxLayout()
+        select_file_button = QtWidgets.QPushButton('Select file name')
+        self.fnameTextBox = QtWidgets.QLineEdit('')
+        exportButton = QtWidgets.QPushButton('Export Data')
+        select_file_button.pressed.connect(self.select_file)
+        exportButton.pressed.connect(self.export)
+        layout.addWidget(select_file_button)
+        layout.addWidget(self.fnameTextBox)
+        layout.addWidget(exportButton)
+        ExportGroup.setLayout(layout)
+        ExportGroup.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        return ExportGroup
+
+    def select_file(self):
+        filename = QtWidgets.QFileDialog.getSaveFileName(self, 'Select File Name')
+        self.fnameTextBox.setText(filename)
+        print(filename)
+
+    def export(self):
+        filename = self.fnameTextBox.text()
+        x, y, er = self.plotWidget.calculate_MSD_plot()
+        data = np.array([x, y, er]).T
+        np.savetxt(filename, data, fmt='%f')
+
     def min_track_spinbox_updated(self, val):
         self.plotWidget.min_tracklength = val
         self.plotWidget.updateMSD()
@@ -84,9 +114,11 @@ class MSD_Plot(QtWidgets.QWidget):
         self.plotWidget.updateMSD()
 
 
+
+
 class MSDWidget(pg.PlotWidget):
     def __init__(self, pynsight_pts, parent):
-        super(MSDWidget, self).__init__(title='Mean Squared Displacement Per Lag', labels={'left': 'Mean Squared Disance (pxls^2)', 'bottom': 'Lag Count'})
+        super(MSDWidget, self).__init__(title='Mean Squared Displacement Per Lag', labels={'left': 'Mean Squared Disance (um^2)', 'bottom': 'Lag Count'})
         self.pynsight_pts = pynsight_pts
         self.parent = parent
         self.min_tracklength = 2
@@ -123,30 +155,13 @@ class MSDWidget(pg.PlotWidget):
                 if SD[1] <= self.max_tracklength:
                     d[int(SD[1])].append(SD[0])
         counts = np.array([len(d[lag]) for lag in lags])
-        means = np.array([np.mean(d[lag]) if len(d[lag])>0 else 0 for lag in lags])
-        std_errs = np.array([np.std(d[lag]) / np.sqrt(counts[lag]) if len(d[lag])>0 else 0 for lag in lags])
-        return lags, means, std_errs
+        means = np.array([np.mean(d[lag]) if len(d[lag])>0 else 0 for lag in lags], dtype=np.float)
+        std_errs = np.array([np.std(d[lag]) / np.sqrt(counts[lag]) if len(d[lag])>0 else 0 for lag in lags], dtype=np.float)
 
-    def calculate_MSD_plot_old(self):
-        tracks = self.pynsight_pts.tracks
-        distances_sq_by_lag = [[] for i in range(10)]
-        for i in range(len(tracks)):
-            x = tracks[i]['x_cor']
-            y = tracks[i]['y_cor']
-            nLags = len(x)
-            if self.min_tracklength <= nLags <= self.max_tracklength:
-                for i in np.arange(nLags):
-                    for j in np.arange(nLags):
-                        if j >= i:
-                            distance_sq = (x[i] - x[j]) ** 2 + (y[i] - y[j]) ** 2
-                            while len(distances_sq_by_lag) <= j - i:
-                                distances_sq_by_lag.append([])
-                            distances_sq_by_lag[j - i].append(distance_sq)
+        # Convert from pixels^2 to microns^2
+        means *= self.parent.microns_per_pixel**2
+        std_errs *= self.parent.microns_per_pixel ** 2
 
-        lags = np.arange(len(distances_sq_by_lag))
-        means = np.array([np.mean(distances_sq_by_lag[lag]) for lag in lags])
-        counts = np.array([len(distances_sq_by_lag[lag]) for lag in lags])
-        std_errs = np.array([np.std(distances_sq_by_lag[lag]) / np.sqrt(counts[lag]) for lag in lags])
         return lags, means, std_errs
 
 
@@ -178,3 +193,6 @@ class Track:
 #mean_SLDS = np.array([t.mean_SLD for t in tracks])
 #lengths = np.array([t.length for t in tracks])
 #pg.plot(mean_SLDS, lengths, pen=None, symbol='o')  ## setting pen=None disables line drawing
+
+
+

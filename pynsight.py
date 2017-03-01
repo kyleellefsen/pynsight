@@ -121,6 +121,7 @@ def cutout(pt, Movie, width):
 
 def refine_pts(pts, blur_window, sigma, amplitude):
     if blur_window is None:
+        g.alert("Before refining points, you must select a 'blurred window'")
         return None, False
     new_pts = []
     old_frame = -1
@@ -182,7 +183,7 @@ class Points(object):
     def extend_track(self, track, maxFramesSkipped, maxDistance):
         pt = self.txy_pts[track[-1]]
         # pt can move less than two pixels in one frame, two frames can be skipped
-        for dt in np.arange(maxFramesSkipped)+1:
+        for dt in np.arange(1, maxFramesSkipped+2):
             frame = int(pt[0]) + dt
             if frame >= len(self.pts_remaining):
                 return track
@@ -251,6 +252,7 @@ class Pynsight():
         self.txy_pts = None
         self.tracks_visible = False
         self.SLD_histogram = None
+        self.microns_per_pixel = 0.160
 
     def gui(self):
         gui = uic.loadUi(os.path.join(os.getcwd(), 'plugins', 'pynsight', 'pynsight.ui'))
@@ -271,6 +273,7 @@ class Pynsight():
         gui.create_SLD_button.pressed.connect(self.create_SLD)
         gui.create_MSD_button.pressed.connect(self.create_MSD)
         gui.save_insight_button.pressed.connect(self.saveInsight)
+        gui.microns_per_pixel_SpinBox.valueChanged.connect(self.set_microns_per_pixel)
 
     def getPoints(self):
         if self.binary_window_selector.window is None:
@@ -355,22 +358,27 @@ class Pynsight():
             self.algorithm_gui.showTracksButton.setText('Hide Tracks')
             self.points.showTracks()
         else:
-            g.m.currentWindow.sigTimeChanged.disconnect(self.points.showTracks)
+            try:
+                g.m.currentWindow.sigTimeChanged.disconnect(self.points.showTracks)
+            except TypeError as e:
+                print(e)
             self.points.clearTracks()
             self.tracks_visible = False
             self.algorithm_gui.showTracksButton.setText('Show Tracks')
 
     def create_MSD(self):
-        self.MSD_plot = MSD_Plot(self.points)
+        self.MSD_plot = MSD_Plot(self.points, self.microns_per_pixel)
     def create_SLD(self):
-        self.SLD_histogram = SLD_Histogram(self.points)
+        self.SLD_histogram = SLD_Histogram(self.points, self.microns_per_pixel)
 
     def saveInsight(self):
         tracks = self.points.tracks
         kwargs = {'pts': self.pts_refined, 'tracks':tracks}
         save_file_gui(write_insight_bin, '.bin', 'Save File', kwargs)
 
-
+    def set_microns_per_pixel(self, value):
+        self.microns_per_pixel = value
+        print(value)
 pynsight = Pynsight()
 g.m.pynsight = pynsight
 
