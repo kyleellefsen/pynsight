@@ -43,6 +43,12 @@ from .particle_simulator import simulate_particles
 from .SLD_histogram import SLD_Histogram
 from .MSD_Plot import MSD_Plot
 
+if StrictVersion(flika_version) < StrictVersion('0.1.0'):
+    flika_icon = QIcon('images/favicon.png')
+else:
+    flika_icon = QIcon('flika/images/favicon.png')
+
+halt_current_computation = False
 
 def launch_docs():
     url='https://github.com/kyleellefsen/pynsight'
@@ -134,6 +140,7 @@ def cutout(pt, Movie, width):
 
 
 def refine_pts(pts, blur_window, sigma, amplitude):
+    global halt_current_computation
     if blur_window is None:
         g.alert("Before refining points, you must select a 'blurred window'")
         return None, False
@@ -145,8 +152,8 @@ def refine_pts(pts, blur_window, sigma, amplitude):
             old_frame = new_frame
             blur_window.imageview.setCurrentIndex(old_frame)
             qApp.processEvents()
-            if g.halt_current_computation:
-                g.halt_current_computation = False
+            if halt_current_computation:
+                halt_current_computation = False
                 return new_pts, False
         width = 9
         mid = int(np.floor(width / 2))
@@ -269,9 +276,9 @@ class Pynsight():
         self.microns_per_pixel = 0.160
 
     def gui(self):
-        gui = uic.loadUi(os.path.join(os.getcwd(), 'plugins', 'pynsight', 'pynsight.ui'))
+        gui = uic.loadUi(os.path.join(os.path.dirname(__file__), 'pynsight.ui'))
         self.algorithm_gui = gui
-        gui.setWindowIcon(QIcon('images/favicon.png'))
+        gui.setWindowIcon(flika_icon)
         gui.show()
         self.binary_window_selector = WindowSelector()
         gui.gridLayout_11.addWidget(self.binary_window_selector)
@@ -299,10 +306,11 @@ class Pynsight():
             self.algorithm_gui.num_pts_label.setText(str(nPoints))
 
     def refinePoints(self):
+        global halt_current_computation
         if self.txy_pts is None:
             return None
         if self.refining_points:
-            g.halt_current_computation = True
+            halt_current_computation = True
         else:
             self.refining_points = True
             blur_window = pynsight.blurred_window_selector.window
