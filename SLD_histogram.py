@@ -2,8 +2,19 @@ import numpy as np
 import os
 import pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets
-from process.BaseProcess import BaseDialog, SliderLabel
-import global_vars as g
+from distutils.version import StrictVersion
+
+import flika
+try:
+    flika_version = flika.__version__
+except AttributeError:
+    flika_version = '0.0.0'
+if StrictVersion(flika_version) < StrictVersion('0.1.0'):
+    import global_vars as g
+    from process.BaseProcess import BaseDialog, SliderLabel
+else:
+    from flika import global_vars as g
+    from flika.process.BaseProcess import BaseDialog, SliderLabel
 
 
 class SLD_Histogram(QtWidgets.QWidget):

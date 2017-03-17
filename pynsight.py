@@ -14,15 +14,29 @@ Algorithm:
 
 import numpy as np
 import os
-import global_vars as g
-from process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
 import pickle
 from qtpy.QtCore import QUrl, QRect, QPointF, Qt
 from qtpy.QtGui import QDesktopServices, QIcon, QPainterPath, QPen, QColor
 from qtpy.QtWidgets import QHBoxLayout, QGraphicsPathItem, qApp
 from qtpy import uic
-from window import Window
-from process.file_ import save_file_gui
+from distutils.version import StrictVersion
+
+import flika
+try:
+    flika_version = flika.__version__
+except AttributeError:
+    flika_version = '0.0.0'
+if StrictVersion(flika_version) < StrictVersion('0.1.0'):
+    import global_vars as g
+    from process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
+    from window import Window
+    from process.file_ import save_file_gui
+else:
+    from flika import global_vars as g
+    from flika.process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
+    from flika.window import Window
+    from flika.process.file_ import save_file_gui
+
 from .insight_writer import write_insight_bin
 from .gaussianFitting import fitGaussian, gaussian, generate_gaussian
 from .particle_simulator import simulate_particles

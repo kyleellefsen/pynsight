@@ -2,7 +2,17 @@ import numpy as np
 import itertools
 import pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets
-from process.BaseProcess import BaseDialog, SliderLabel
+from distutils.version import StrictVersion
+
+import flika
+try:
+    flika_version = flika.__version__
+except AttributeError:
+    flika_version = '0.0.0'
+if StrictVersion(flika_version) < StrictVersion('0.1.0'):
+    from process.BaseProcess import BaseDialog, SliderLabel
+else:
+    from flika.process.BaseProcess import BaseDialog, SliderLabel
 
 class MSD_Plot(QtWidgets.QWidget):
     def __init__(self, pynsight_pts, microns_per_pixel):
