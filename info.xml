@@ -1,4 +1,7 @@
 <plugin name="Pynsight">
+    <directory>
+        pynsight
+    </directory>
 	<version>
 		2017.03.20
 	</version>
