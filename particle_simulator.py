@@ -8,7 +8,6 @@ from numpy import random
 import numpy as np
 import sys, os
 from .gaussianFitting import gaussian
-import matplotlib.pyplot as plt
 
 
 def generate_model_particle(x_remander,y_remander, amp):
@@ -115,9 +114,8 @@ def simulate_particles(mt=500, mx=256, my=256):
                 true_pts.append(true_pt)
     return A, true_pts
 
-if __name__=='__main__':
-
-
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
     true_pts=np.array(true_pts)
     np.savetxt(r'C:\Users\kyle\Desktop\true_points.txt',true_pts)
     I=Window(A)
