@@ -5,16 +5,9 @@ from qtpy import QtCore, QtGui, QtWidgets
 from distutils.version import StrictVersion
 
 import flika
-try:
-    flika_version = flika.__version__
-except AttributeError:
-    flika_version = '0.0.0'
-if StrictVersion(flika_version) < StrictVersion('0.1.0'):
-    import global_vars as g
-    from process.BaseProcess import BaseDialog, SliderLabel
-else:
-    from flika import global_vars as g
-    from flika.process.BaseProcess import BaseDialog, SliderLabel
+from flika import global_vars as g
+from flika.process.BaseProcess import BaseDialog, SliderLabel
+from flika.utils.misc import save_file_gui
 
 
 class SLD_Histogram(QtWidgets.QWidget):
@@ -85,7 +78,7 @@ class SLD_Histogram(QtWidgets.QWidget):
         return ExportGroup
 
     def select_file(self):
-        filename = QtWidgets.QFileDialog.getSaveFileName(self, 'Select File Name')
+        filename = save_file_gui("Select file name")
         self.fnameTextBox.setText(filename)
         print(filename)
 
