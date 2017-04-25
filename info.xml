@@ -15,7 +15,7 @@
 	</dependencies>
 	<menu_layout>
 		<action location="pynsight" function="pynsight.gui">Pynsight</action>
-		<action location="pynsight" function="simulate_particles_wrapper">Simulate Particles</action>
+		<action location="particle_simulator" function="particle_simulator.gui">Simulate Particles</action>
 		<action location="pynsight" function="launch_docs">Docs</action>
 	</menu_layout>
 </plugin>

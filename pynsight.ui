@@ -357,7 +357,7 @@
             <item row="0" column="0">
              <widget class="QLabel" name="micronsPixelLabel">
               <property name="text">
-               <string>Microns/pixel</string>
+               <string>microns/pixel</string>
               </property>
              </widget>
             </item>
@@ -377,6 +377,20 @@
               </property>
               <property name="value">
                <double>0.160000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="secondsFrameLabel">
+              <property name="text">
+               <string>seconds/frame</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QDoubleSpinBox" name="seconds_per_frame_SpinBox">
+              <property name="value">
+               <double>0.100000000000000</double>
               </property>
              </widget>
             </item>

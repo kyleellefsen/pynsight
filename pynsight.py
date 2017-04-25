@@ -19,34 +19,17 @@ from qtpy.QtCore import QUrl, QRect, QPointF, Qt
 from qtpy.QtGui import QDesktopServices, QIcon, QPainterPath, QPen, QColor
 from qtpy.QtWidgets import QHBoxLayout, QGraphicsPathItem, qApp
 from qtpy import uic
-from distutils.version import StrictVersion
 
-import flika
-try:
-    flika_version = flika.__version__
-except AttributeError:
-    flika_version = '0.0.0'
-if StrictVersion(flika_version) < StrictVersion('0.1.0'):
-    import global_vars as g
-    from process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
-    from window import Window
-    from process.file_ import save_file_gui
-else:
-    from flika import global_vars as g
-    from flika.process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
-    from flika.window import Window
-    from flika.process.file_ import save_file_gui
+from flika import global_vars as g
+from flika.process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
+from flika.window import Window
+from flika.process.file_ import save_file_gui
 
 from .insight_writer import write_insight_bin
 from .gaussianFitting import fitGaussian, gaussian, generate_gaussian
-from .particle_simulator import simulate_particles
 from .SLD_histogram import SLD_Histogram
 from .MSD_Plot import MSD_Plot
 
-if StrictVersion(flika_version) < StrictVersion('0.1.0'):
-    flika_icon = QIcon('images/favicon.png')
-else:
-    flika_icon = QIcon('flika/images/favicon.png')
 
 halt_current_computation = False
 
@@ -54,10 +37,6 @@ def launch_docs():
     url='https://github.com/kyleellefsen/pynsight'
     QDesktopServices.openUrl(QUrl(url))
 
-
-def simulate_particles_wrapper():
-    A, true_pts = simulate_particles()
-    Window(A)
 
 
 def Export_pts_from_MotilityTracking():
@@ -232,8 +211,9 @@ class Points(object):
         self.tracks_by_frame = tracks_by_frame
 
     def clearTracks(self):
-        for pathitem in self.pathitems:
-            self.window.imageview.view.removeItem(pathitem)
+        if not self.window.closed:
+            for pathitem in self.pathitems:
+                self.window.imageview.view.removeItem(pathitem)
         self.pathitems = []
 
     def showTracks(self):
@@ -274,11 +254,11 @@ class Pynsight():
         self.tracks_visible = False
         self.SLD_histogram = None
         self.microns_per_pixel = 0.160
+        self.seconds_per_frame = 0.1
 
     def gui(self):
         gui = uic.loadUi(os.path.join(os.path.dirname(__file__), 'pynsight.ui'))
         self.algorithm_gui = gui
-        gui.setWindowIcon(flika_icon)
         gui.show()
         self.binary_window_selector = WindowSelector()
         gui.gridLayout_11.addWidget(self.binary_window_selector)
@@ -295,6 +275,7 @@ class Pynsight():
         gui.create_MSD_button.pressed.connect(self.create_MSD)
         gui.save_insight_button.pressed.connect(self.saveInsight)
         gui.microns_per_pixel_SpinBox.valueChanged.connect(self.set_microns_per_pixel)
+        gui.seconds_per_frame_SpinBox.valueChanged.connect(self.set_seconds_per_frame)
 
     def getPoints(self):
         if self.binary_window_selector.window is None:
@@ -391,7 +372,7 @@ class Pynsight():
     def create_MSD(self):
         self.MSD_plot = MSD_Plot(self.points, self.microns_per_pixel)
     def create_SLD(self):
-        self.SLD_histogram = SLD_Histogram(self.points, self.microns_per_pixel)
+        self.SLD_histogram = SLD_Histogram(self.points, self.microns_per_pixel, self.seconds_per_frame)
 
     def saveInsight(self):
         tracks = self.points.tracks
@@ -401,8 +382,13 @@ class Pynsight():
     def set_microns_per_pixel(self, value):
         self.microns_per_pixel = value
         print(value)
+
+    def set_seconds_per_frame(self, value):
+        self.seconds_per_frame = value
+        print(value)
+
 pynsight = Pynsight()
-g.m.pynsight = pynsight
+g.pynsight = pynsight
 
 
 if __name__ == '__main__':

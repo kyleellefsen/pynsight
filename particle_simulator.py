@@ -7,7 +7,11 @@ Created on Tue Apr 05 16:19:30 2016
 from numpy import random
 import numpy as np
 import sys, os
+from qtpy import QtWidgets, QtGui, QtCore
+from flika.process.BaseProcess import BaseProcess_noPriorWindow, WindowSelector, SliderLabel, CheckBox
+from flika import global_vars as g
 from .gaussianFitting import gaussian
+from .pynsight import Points
 
 
 def generate_model_particle(x_remander,y_remander, amp):
@@ -21,6 +25,7 @@ def generate_model_particle(x_remander,y_remander, amp):
 
 
 def addParticle(A, t, x, y, amp, mx, my):
+    assert isinstance(A, np.ndarray)
     x_int = int(np.round(x))
     y_int = int(np.round(y))
     x_remander = x-x_int
@@ -28,16 +33,15 @@ def addParticle(A, t, x, y, amp, mx, my):
     model_particle = generate_model_particle(x_remander,y_remander, amp)
     dx, dy = model_particle.shape
     assert dx % 2 == 1
-    tt = np.array([t])
+    tt = np.array([t], dtype=np.int)
     dx = (dx-1)/2
     dy = (dy-1)/2
     yy = np.arange(y_int-dy,y_int+dy+1, dtype=np.int)
     xx = np.arange(x_int-dx,x_int+dx+1, dtype=np.int)
     if np.min(yy)<0 or np.min(xx)<0 or np.max(yy)>=my or np.max(xx)>=mx:
-        return A, None
-    A[np.ix_(tt,xx,yy)]=A[np.ix_(tt,xx,yy)]+model_particle
-    true_pt = [t,x,y]
-    return A, true_pt
+        return A
+    A[np.ix_(tt, xx, yy)] = A[np.ix_(tt, xx, yy)] + model_particle
+    return A
 
 
 def get_accuracy(true_pts, det_pts):
@@ -79,40 +83,151 @@ def get_accuracy(true_pts, det_pts):
     return linked_pts, false_pos, false_neg
 
 
-def simulate_particles(mt=500, mx=256, my=256):
-    rate_of_appearance = .1  # total rate over the entire field of view
-    rate_of_disappearance = .01  # for every particle
-    amp = 5
-    A = random.randn(mt, mx, my)
-    true_pts = []
-    current_particles = []
-    for frame in np.arange(mt):
-        print(frame)
-        old_particles = current_particles
-        current_particles = []
-        for i, particle in enumerate(old_particles):
-            if random.random() < rate_of_disappearance:
-                continue  # remove the particle
-            else:
-                x, y = particle
-                delta = 1.0  # Delta determines the "speed" of the Brownian motion.  The random variable of the position at time t, X(t), has a normal distribution whose mean is the position at time t=0 and whose variance is delta**2*t.
-                dt = 1.0  # Time Step
 
-                x += random.randn() * delta**2 * dt
-                y += random.randn() * delta**2 * dt
-                current_particles.append([x, y])
-                A, true_pt = addParticle(A, frame, x, y, amp, mx, my)
-                if true_pt is not None:
-                    true_pts.append(true_pt)
-        Nparticles_to_add = random.poisson(rate_of_appearance)
-        for i in np.arange(Nparticles_to_add):
+
+class Particle_simulator(BaseProcess_noPriorWindow):
+    """ particle_simulator()
+    This function simulates particles undergoing 2D diffusion
+    """
+    def __init__(self):
+        super().__init__()
+
+    def get_init_settings_dict(self):
+        s = dict()
+        s['rate_of_appearance'] = .1
+        s['rate_of_disappearance'] = .01
+        s['amplitude'] = 50
+        s['mx'] = 256
+        s['mt'] = 500
+        s['velocity'] = 1.2  # Delta determines the "speed" of the Brownian motion.  The random variable of the position at time t, X(t), has a normal distribution whose mean is the position at time t=0 and whose variance is delta**2*t.]
+        return s
+
+    def gui(self):
+        self.gui_reset()
+        rate_of_appearance = SliderLabel(3)
+        rate_of_appearance.setRange(0,10)
+        rate_of_disappearance = SliderLabel(3)
+        rate_of_disappearance.setRange(0, 10)
+        amplitude = SliderLabel(1)
+        amplitude.setRange(0, 100)
+        mx = SliderLabel(0)
+        mx.setRange(0, 512)
+        mt = SliderLabel(0)
+        mt.setRange(0, 10000)
+        velocity = SliderLabel(2)
+        velocity.setRange(0, 10)
+
+        self.items.append({'name': 'rate_of_appearance',    'string': 'Rate of Appearance',     'object': rate_of_appearance})
+        self.items.append({'name': 'rate_of_disappearance', 'string': 'Rate of Disappearance',  'object': rate_of_disappearance})
+        self.items.append({'name': 'amplitude',             'string': 'Rate of Amplitude',      'object': amplitude})
+        self.items.append({'name': 'mx',                    'string': 'Image Width and Height', 'object': mx})
+        self.items.append({'name': 'mt',                    'string': 'Number of Frames',       'object': mt})
+        self.items.append({'name': 'velocity',              'string': 'Particle Velocity',      'object': velocity})
+
+        super().gui()
+
+    def __call__(self, rate_of_appearance, rate_of_disappearance, amplitude, velocity, mt, mx):
+        self.start()
+        udc = {'rate_of_appearance': rate_of_appearance,
+               'rate_of_disappearance': rate_of_disappearance,
+               'amplitude': amplitude,
+               'velocity': velocity,
+               'mt': mt,
+               'mx': mx}
+        simulated_particles = Simulated_particles(udc)
+        self.newtif = simulated_particles.image
+        self.newname = 'Simulated Particles'
+        particle_window = self.end()
+        simulated_particles.setupUI(particle_window)
+        g.simulated_particles = simulated_particles
+        g.sim = simulated_particles
+        return simulated_particles
+        #return A, true_pts
+
+particle_simulator = Particle_simulator()
+
+
+class Simulated_particles(QtWidgets.QWidget):
+    def __init__(self, udc):
+        super().__init__()
+        self.udc = udc
+        image, points = self.simulate_particles()
+        self.image = image
+        self.points = points
+        self.particle_window = None
+
+    def simulate_particles(self):
+        rate_of_appearance = self.udc['rate_of_appearance']
+        rate_of_disappearance = self.udc['rate_of_disappearance']
+        amplitude = self.udc['amplitude']
+        velocity = self.udc['velocity']
+        mt = self.udc['mt']
+        mx = self.udc['mx']
+        my = mx
+
+        true_pts = []
+        tracks = []
+
+        a = random.poisson(rate_of_appearance, mt)
+        creation_times = []
+        while len(np.where(a)[0])>0:
+            creation_times.extend(np.where(a)[0])
+            a[np.where(a)[0]]-=1
+        creation_times = np.array(creation_times)
+        creation_times.sort()
+        nParticles = len(creation_times)
+        lifetimes = random.exponential(1/rate_of_disappearance, nParticles)
+        destroy_times = creation_times + lifetimes
+        txy_pts = []
+        tracks = []
+        for i in np.arange(nParticles):
             x = random.random() * mx
             y = random.random() * my
-            current_particles.append([x, y])
-            A, true_pt = addParticle(A, frame, x, y, amp, mx, my)
-            if true_pt is not None:
-                true_pts.append(true_pt)
-    return A, true_pts
+            t = creation_times[i]
+            txy_pts.append([t, x, y])
+            track = [len(txy_pts)-1]
+            t += 1
+            while t < destroy_times[i] and t < mt:
+                x += random.randn() * velocity
+                y += random.randn() * velocity
+                txy_pts.append([t, x, y])
+                track.append(len(txy_pts)-1)
+                t+=1
+            tracks.append(track)
+        txy_pts = np.array(txy_pts)
+        points = Points(txy_pts)
+        points.tracks = tracks
+        points.get_tracks_by_frame()
+        A = random.randn(mt, mx, my)
+        for pt in txy_pts:
+            frame, x, y = pt
+            A = addParticle(A, frame, x, y, amplitude, mx, my)
+
+        return A, points
+
+    def setupUI(self, particle_window):
+        self.particle_window = particle_window
+        self.setWindowTitle('Simulated particles - {}'.format(self.particle_window.name))
+        self.l = QtWidgets.QGridLayout(self)
+        self.setLayout(self.l)
+        self.l.addWidget(self.particle_window)
+        self.load_into_pynsight_button = QtWidgets.QPushButton('Load into Pynsight')
+        self.load_into_pynsight_button.pressed.connect(self.load_into_pynsight)
+        self.l.addWidget(self.load_into_pynsight_button)
+        self.show()
+
+    def load_into_pynsight(self):
+        g.pynsight.gui()
+        g.pynsight.txy_pts = g.sim.points.txy_pts
+        g.pynsight.algorithm_gui.showPointsButton.setEnabled(True)
+        g.pynsight.skip_refinePoints()
+        g.pynsight.points = g.sim.points
+        tracks = g.pynsight.points.tracks
+        nTracks = len(tracks)
+        g.pynsight.algorithm_gui.num_tracks_label.setText(str(nTracks))
+        g.pynsight.algorithm_gui.showTracksButton.setEnabled(True)
+        g.pynsight.algorithm_gui.analyze_tab_widget.setCurrentIndex(3)
+
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt

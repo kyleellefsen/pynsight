@@ -23,7 +23,6 @@ class MSD_Plot(QtWidgets.QWidget):
         self.layout.addWidget(self.ExportGroup)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setWindowTitle('Flika - Pynsight Plugin - MSD')
-        self.setWindowIcon(QtGui.QIcon('images/favicon.png'))
         self.show()
 
     def makeTrackLengthsGroup(self):

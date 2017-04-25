@@ -1,5 +1,6 @@
 import numpy as np
 import os
+from scipy.optimize import curve_fit
 import pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets
 from distutils.version import StrictVersion
@@ -11,10 +12,11 @@ from flika.utils.misc import save_file_gui
 
 
 class SLD_Histogram(QtWidgets.QWidget):
-    def __init__(self, pynsight_pts, microns_per_pixel):
+    def __init__(self, pynsight_pts, microns_per_pixel, seconds_per_frame):
         super(SLD_Histogram, self).__init__()
         self.pynsight_pts = pynsight_pts
         self.microns_per_pixel = microns_per_pixel
+        self.seconds_per_frame = seconds_per_frame
         self.nTracksLabel = QtWidgets.QLabel('Number of Tracks: {}/{}'.format(0, 0))
         self.trackLengthsGroup = self.makeTrackLengthsGroup()
         self.ExportGroup = self.makeExportGroup()
@@ -30,7 +32,6 @@ class SLD_Histogram(QtWidgets.QWidget):
         self.layout.addWidget(self.ExportGroup)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setWindowTitle('Flika - Pynsight Plugin - SLD')
-        self.setWindowIcon(QtGui.QIcon('images/favicon.png'))
         self.show()
 
     def makeTrackLengthsGroup(self):
@@ -109,20 +110,24 @@ class SLD_Histogram(QtWidgets.QWidget):
     def showCDF(self):
         # self = g.m.pynsight.SLD_histogram
         mean_squared_SLDs, y, nTracks = self.calcCDF()
-        p = pg.plot(mean_squared_SLDs, y, title = 'Cumulative Distribution Function')
-        p.plotItem.getAxis('bottom').setLabel('Single Lag Displacements squared (um^2)')
-        p.plotItem.getAxis('left').setLabel('CDF')
-        p.plotItem.setTitle('{} tracks,    {} mean squared SLDs'.format(nTracks, len(mean_squared_SLDs)))
-        print("WHY IS THE nTracks VARIABLE ALWAYS THE SAME AS THE mean_squared_SLDs VARIABLE???")
-        p.plotItem.getAxis('bottom').enableAutoSIPrefix(False)
+        self.cdf = CDF(mean_squared_SLDs, y, nTracks, self.seconds_per_frame)
 
     def calcCDF(self):
+        """
         mean_SLDs, nTracks = self.plotWidget.calc_mean_SLDs()
         mean_squared_SLDs = mean_SLDs**2
         mean_squared_SLDs = np.sort(mean_squared_SLDs)
         y = np.arange(len(mean_squared_SLDs), dtype=np.float)
         y /= np.max(y)
         return mean_squared_SLDs, y, nTracks
+        """
+        all_SLDs, nTracks = self.plotWidget.get_all_SLDs()
+        squared_SLDs = all_SLDs**2
+        squared_SLDs = np.sort(squared_SLDs)
+        y = np.arange(len(squared_SLDs), dtype=np.float)
+        y /= np.max(y)
+        return squared_SLDs, y, nTracks
+
 
 
 class SLD_Histogram_Plot(pg.PlotWidget):
@@ -175,6 +180,30 @@ class SLD_Histogram_Plot(pg.PlotWidget):
         mean_SLDs = np.array(mean_SLDs)
         return mean_SLDs, nTracks
 
+    def get_all_SLDs(self):
+        tracks = self.pynsight_pts.tracks
+        pts = self.pynsight_pts.txy_pts
+        all_SLDs = []
+        nTracks = 0
+        track_lens = []
+        for track in tracks:
+            if self.min_tracklength <= len(track) <= self.max_tracklength:
+                track_lens.append(len(track))
+                txy = pts[track, :]
+                dt_dx = txy[1:, :] - txy[:-1, :]
+                dt_dx = dt_dx[dt_dx[:, 0] == 1] # Remove all lags that were greater than one
+                if len(dt_dx) == 0:
+                    continue
+                slds = np.sqrt(dt_dx[:, 1] ** 2 + dt_dx[:, 2] ** 2) # slds in pixels
+                slds *= self.parent.microns_per_pixel # Convert from pixels to microns.
+                all_SLDs.extend(slds)
+                nTracks += 1
+        print('Total # tracks included: {}'.format(nTracks))
+        print('Total # slds2 included: {}'.format(len(all_SLDs)))
+        print('Average track length: {}'.format(np.mean(track_lens)))
+        all_SLDs = np.array(all_SLDs)
+        return all_SLDs, nTracks
+
     def tracks_updated(self):
         mean_SLDs, _ = self.calc_mean_SLDs()
         self.parent.nTracksLabel.setText('Number of Tracks: {}/{}'.format(len(mean_SLDs), self.nTracksTotal))
@@ -183,7 +212,10 @@ class SLD_Histogram_Plot(pg.PlotWidget):
 
     def setData(self, data=np.array([]), n_bins=None):
         if n_bins is None:
-            n_bins = data.size ** 0.5
+            if self.n_bins is None or self.n_bins == 0:
+                n_bins = data.size ** 0.5
+            else:
+                n_bins = self.n_bins
         if len(data) == 0:
             data = self.plot_data
 
@@ -259,6 +291,73 @@ class SLD_Histogram_Plot(pg.PlotWidget):
         bd.setMinimumWidth(400)
         bd.show()
         self.bd = bd
+
+
+def exp_dec(x, A1, tau):
+    return 1 + A1 * np.exp(-x / tau)
+
+def exp_dec_2(x, A1, tau1, tau2):
+    A2 = -1 - A1
+    return 1 + A1 * np.exp(-x / tau1) + A2 * np.exp(-x / tau2)
+
+
+
+class CDF(QtWidgets.QWidget):
+
+    def __init__(self, squared_SLDs, y, nTracks, seconds_per_frame):
+        super().__init__()
+        self.seconds_per_frame = seconds_per_frame
+        self.squared_SLDs = squared_SLDs
+        self.y = y
+        self.nTracks = nTracks
+        cdf_plot = pg.plot(squared_SLDs, y, pen='r', name='Data')
+        cdf_plot.plotItem.getAxis('bottom').setLabel('Single Lag Displacements squared (um^2)')
+        cdf_plot.plotItem.getAxis('left').setLabel('CDF')
+        cdf_plot.plotItem.setTitle('{} tracks,    {} squared SLDs'.format(nTracks, len(squared_SLDs)))
+        cdf_plot.plotItem.getAxis('bottom').enableAutoSIPrefix(False)
+        self.cdf_plot = cdf_plot
+        self.cdf_plot.plotItem.addLegend()
+        self.setupUI()
+
+    def setupUI(self):
+        self.setWindowTitle('Cumulative Distribution Function')
+        self.l = QtWidgets.QGridLayout(self)
+        self.setLayout(self.l)
+        self.l.addWidget(self.cdf_plot)
+        self.fit_exp_dec_1_button = QtWidgets.QPushButton('Fit Single Exponential')
+        self.fit_exp_dec_1_button.pressed.connect(self.fit_exp_dec_1)
+        self.l.addWidget(self.fit_exp_dec_1_button)
+        self.show()
+
+    def fit_exp_dec_1(self):
+        p = self.cdf_plot
+        residual_plot = pg.plot(title='Single exponential')
+
+        xdata = self.squared_SLDs
+        ydata = self.y
+        x_fit_mask = (0 < xdata) * (xdata < 30)  # add horizontal bars to set x limits
+        xfit = xdata[x_fit_mask]
+        popt, pcov = curve_fit(exp_dec, xfit, ydata[x_fit_mask], bounds=([-1.2, 0], [0, 30]))
+        tau_fit = popt[1]
+        D_fit = self.tau_to_D(tau_fit)
+        print('D = {0:.4g} um^2 s^-1'.format(D_fit))
+        yfit = exp_dec(xfit, *popt)
+        p.plot(xfit, yfit, pen='g', name=' Fit. Tau = {0:.4g}. D = {1:.4g} um^2 s^-1'.format(tau_fit, D_fit))
+        residual_plot.plot(xfit, np.abs(ydata[x_fit_mask] - yfit))
+
+    def tau_to_D(self, tau):
+        """ 
+        tau = 4Dt
+        tau is decay constant of exponential fit
+        D is diffusion coefficient
+        t is duration of one lag (exposure time) in seconds
+        """
+        t = self.seconds_per_frame
+        D = tau / (4 * t)
+        return D
+
+
+
 
 #SLD_Histogram(g.m.pynsight.points)
 
