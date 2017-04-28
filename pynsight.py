@@ -14,7 +14,7 @@ Algorithm:
 
 import numpy as np
 import os
-import pickle
+import json, codecs
 from qtpy.QtCore import QUrl, QRect, QPointF, Qt
 from qtpy.QtGui import QDesktopServices, QIcon, QPainterPath, QPen, QColor
 from qtpy.QtWidgets import QHBoxLayout, QGraphicsPathItem, qApp
@@ -23,7 +23,7 @@ from qtpy import uic
 from flika import global_vars as g
 from flika.process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
 from flika.window import Window
-from flika.process.file_ import save_file_gui
+from flika.process.file_ import save_file_gui, open_file_gui
 
 from .insight_writer import write_insight_bin
 from .gaussianFitting import fitGaussian, gaussian, generate_gaussian
@@ -154,22 +154,25 @@ class Points(object):
     def __init__(self, txy_pts):
         self.frames = np.unique(txy_pts[:, 0]).astype(np.int)
         self.txy_pts = txy_pts
+        self.window = None
+        self.pathitems = []
         self.pts_by_frame = []
         self.pts_remaining = []
         self.pts_idx_by_frame = []  # this array has the same structure as points_by_array but contains the index of the original txy_pts argument
-        curr_idx = 0
-        self.window = None
-        self.pathitems = []
 
-        for frame in np.arange(0, np.max(self.frames) + 1):
-            pos = txy_pts[txy_pts[:, 0] == frame, 1:]
-            self.pts_by_frame.append(pos)
-            self.pts_remaining.append(np.ones(pos.shape[0], dtype=np.bool))
-            old_curr_idx = curr_idx
-            curr_idx = old_curr_idx + len(pos)
-            self.pts_idx_by_frame.append(np.arange(old_curr_idx, curr_idx))
 
     def link_pts(self, maxFramesSkipped, maxDistance):
+        print('Linking points')
+        self.pts_by_frame = []
+        self.pts_remaining = []
+        self.pts_idx_by_frame = []  # this array has the same structure as points_by_array but contains the index of the original txy_pts argument
+        for frame in np.arange(0, np.max(self.frames) + 1):
+            indicies = np.where(self.txy_pts[:, 0] == frame)[0]
+            pos = self.txy_pts[indicies, 1:]
+            self.pts_by_frame.append(pos)
+            self.pts_remaining.append(np.ones(pos.shape[0], dtype=np.bool))
+            self.pts_idx_by_frame.append(indicies)
+
         tracks = []
         for frame in self.frames:
             for pt_idx in np.where(self.pts_remaining[frame])[0]:
@@ -211,7 +214,7 @@ class Points(object):
         self.tracks_by_frame = tracks_by_frame
 
     def clearTracks(self):
-        if not self.window.closed:
+        if self.window is not None and not self.window.closed:
             for pathitem in self.pathitems:
                 self.window.imageview.view.removeItem(pathitem)
         self.pathitems = []
@@ -274,6 +277,8 @@ class Pynsight():
         gui.create_SLD_button.pressed.connect(self.create_SLD)
         gui.create_MSD_button.pressed.connect(self.create_MSD)
         gui.save_insight_button.pressed.connect(self.saveInsight)
+        gui.savetracksjson_button.pressed.connect(self.savetracksjson)
+        gui.loadtracksjson_button.pressed.connect(self.loadtracksjson)
         gui.microns_per_pixel_SpinBox.valueChanged.connect(self.set_microns_per_pixel)
         gui.seconds_per_frame_SpinBox.valueChanged.connect(self.set_seconds_per_frame)
 
@@ -317,6 +322,9 @@ class Pynsight():
     def linkPoints(self):
         if self.pts_refined is None:
             return None
+        if self.tracks_visible:
+            self.showTracks()
+
         txy_pts_refined = np.vstack((self.pts_refined[:, 0], self.pts_refined[:, 3], self.pts_refined[:, 4])).T
         self.points = Points(txy_pts_refined)
         maxFramesSkipped = self.algorithm_gui.maxFramesSkippedSpinBox.value()
@@ -365,7 +373,10 @@ class Pynsight():
                 g.m.currentWindow.sigTimeChanged.disconnect(self.points.showTracks)
             except TypeError as e:
                 print(e)
-            self.points.clearTracks()
+            try:
+                self.points.clearTracks()
+            except RuntimeError:
+                pass
             self.tracks_visible = False
             self.algorithm_gui.showTracksButton.setText('Show Tracks')
 
@@ -378,6 +389,32 @@ class Pynsight():
         tracks = self.points.tracks
         kwargs = {'pts': self.pts_refined, 'tracks':tracks}
         save_file_gui(write_insight_bin, '.bin', 'Save File', kwargs)
+
+    def savetracksjson(self):
+        tracks = self.points.tracks
+        if isinstance(tracks[0][0], np.int64):
+            tracks = [[np.asscalar(a) for a in b] for b in tracks]
+        txy_pts = self.points.txy_pts.tolist()
+        filename = save_file_gui("Save tracks as json", filetypes='*.json')
+        pts = {'tracks': tracks, 'txy_pts': txy_pts}
+        json.dump(pts, codecs.open(filename, 'w', encoding='utf-8'), separators=(',', ':'), sort_keys=True, indent=4)  ### this saves the array in .json format
+
+    def loadtracksjson(self):
+        filename = open_file_gui("Open tracks from json", filetypes='*.json')
+        obj_text = codecs.open(filename, 'r', encoding='utf-8').read()
+        pts = json.loads(obj_text)
+        txy_pts = np.array(pts['txy_pts'])
+        self.txy_pts = txy_pts
+        self.algorithm_gui.showPointsButton.setEnabled(True)
+        self.skip_refinePoints()
+        points = Points(txy_pts)
+        points.tracks = pts['tracks']
+        points.get_tracks_by_frame()
+        self.points = points
+        nTracks = len(points.tracks)
+        self.algorithm_gui.num_tracks_label.setText(str(nTracks))
+        self.algorithm_gui.showTracksButton.setEnabled(True)
+        self.algorithm_gui.analyze_tab_widget.setCurrentIndex(3)
 
     def set_microns_per_pixel(self, value):
         self.microns_per_pixel = value

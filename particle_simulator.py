@@ -20,7 +20,9 @@ def generate_model_particle(x_remander,y_remander, amp):
     xorigin = 3+x_remander
     yorigin = 3+y_remander
     sigma = 1
-    model_particle=gaussian(x[:,None], y[None,:], xorigin, yorigin, sigma, amp)
+    model_particle_wo_noise = gaussian(x[:,None], y[None,:], xorigin, yorigin, sigma, amp)
+    noise = np.random.normal(0, 1, model_particle_wo_noise.shape) * model_particle_wo_noise
+    model_particle = model_particle_wo_noise + noise
     return model_particle
 
 
@@ -99,7 +101,9 @@ class Particle_simulator(BaseProcess_noPriorWindow):
         s['amplitude'] = 50
         s['mx'] = 256
         s['mt'] = 500
-        s['velocity'] = 1.2  # Delta determines the "speed" of the Brownian motion.  The random variable of the position at time t, X(t), has a normal distribution whose mean is the position at time t=0 and whose variance is delta**2*t.]
+        s['D'] = 1.0  # Delta determines the "speed" of the Brownian motion.  The random variable of the position at time t, X(t), has a normal distribution whose mean is the position at time t=0 and whose variance is delta**2*t.]
+        s['frame_duration'] = 1  # seconds
+        s['microns_per_pixel'] = 0.16
         return s
 
     def gui(self):
@@ -114,26 +118,34 @@ class Particle_simulator(BaseProcess_noPriorWindow):
         mx.setRange(0, 512)
         mt = SliderLabel(0)
         mt.setRange(0, 10000)
-        velocity = SliderLabel(2)
-        velocity.setRange(0, 10)
+        D = SliderLabel(2)
+        D.setRange(0, 10)
+        frame_duration = SliderLabel(2)
+        frame_duration.setRange(0, 1)
+        microns_per_pixel = SliderLabel(2)
+        microns_per_pixel.setRange(0, 1)
 
         self.items.append({'name': 'rate_of_appearance',    'string': 'Rate of Appearance',     'object': rate_of_appearance})
         self.items.append({'name': 'rate_of_disappearance', 'string': 'Rate of Disappearance',  'object': rate_of_disappearance})
-        self.items.append({'name': 'amplitude',             'string': 'Rate of Amplitude',      'object': amplitude})
+        self.items.append({'name': 'amplitude',             'string': 'Amplitude',              'object': amplitude})
         self.items.append({'name': 'mx',                    'string': 'Image Width and Height', 'object': mx})
         self.items.append({'name': 'mt',                    'string': 'Number of Frames',       'object': mt})
-        self.items.append({'name': 'velocity',              'string': 'Particle Velocity',      'object': velocity})
+        self.items.append({'name': 'D',                     'string': 'Diffusion Coefficient (um^2/s)',  'object': D})
+        self.items.append({'name': 'frame_duration',        'string': 'Frame Duration (s)',     'object': frame_duration})
+        self.items.append({'name': 'microns_per_pixel',     'string': 'microns per pixel',      'object': microns_per_pixel})
 
         super().gui()
 
-    def __call__(self, rate_of_appearance, rate_of_disappearance, amplitude, velocity, mt, mx):
+    def __call__(self, rate_of_appearance, rate_of_disappearance, amplitude, D, mt, mx, frame_duration, microns_per_pixel):
         self.start()
         udc = {'rate_of_appearance': rate_of_appearance,
                'rate_of_disappearance': rate_of_disappearance,
                'amplitude': amplitude,
-               'velocity': velocity,
+               'D': D,
                'mt': mt,
-               'mx': mx}
+               'mx': mx,
+               'frame_duration': frame_duration,
+               'microns_per_pixel': microns_per_pixel}
         simulated_particles = Simulated_particles(udc)
         self.newtif = simulated_particles.image
         self.newname = 'Simulated Particles'
@@ -160,13 +172,12 @@ class Simulated_particles(QtWidgets.QWidget):
         rate_of_appearance = self.udc['rate_of_appearance']
         rate_of_disappearance = self.udc['rate_of_disappearance']
         amplitude = self.udc['amplitude']
-        velocity = self.udc['velocity']
+        frame_duration = self.udc['frame_duration']
+        microns_per_pixel = self.udc['microns_per_pixel']
+        D = self.udc['D']
         mt = self.udc['mt']
         mx = self.udc['mx']
         my = mx
-
-        true_pts = []
-        tracks = []
 
         a = random.poisson(rate_of_appearance, mt)
         creation_times = []
@@ -188,8 +199,8 @@ class Simulated_particles(QtWidgets.QWidget):
             track = [len(txy_pts)-1]
             t += 1
             while t < destroy_times[i] and t < mt:
-                x += random.randn() * velocity
-                y += random.randn() * velocity
+                x += random.randn() * np.sqrt( 2* D * frame_duration) / microns_per_pixel
+                y += random.randn() * np.sqrt( 2* D * frame_duration) / microns_per_pixel
                 txy_pts.append([t, x, y])
                 track.append(len(txy_pts)-1)
                 t+=1
