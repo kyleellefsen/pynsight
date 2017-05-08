@@ -17,20 +17,40 @@ class SLD_Histogram(QtWidgets.QWidget):
         self.pynsight_pts = pynsight_pts
         self.microns_per_pixel = microns_per_pixel
         self.seconds_per_frame = seconds_per_frame
+        self.average_by_track = False
         self.nTracksLabel = QtWidgets.QLabel('Number of Tracks: {}/{}'.format(0, 0))
         self.trackLengthsGroup = self.makeTrackLengthsGroup()
         self.ExportGroup = self.makeExportGroup()
+
+        self.average_by_track_layout = self. make_average_by_track_group()
+
+
         self.cdf_group = self.make_cdf_group()
         self.layout = QtWidgets.QVBoxLayout(self)
         self.plotWidget = SLD_Histogram_Plot(pynsight_pts, self)
         self.layout.addWidget(self.plotWidget)
         self.layout.addWidget(self.nTracksLabel)
+        self.layout.addLayout(self.average_by_track_layout)
+
         self.layout.addWidget(self.trackLengthsGroup)
         self.layout.addWidget(self.cdf_group)
         self.layout.addWidget(self.ExportGroup)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setWindowTitle('Flika - Pynsight Plugin - SLD')
         self.show()
+
+    def make_average_by_track_group(self):
+        layout = QtWidgets.QHBoxLayout()
+        self.average_by_track_label = QtWidgets.QLabel('Mean SLD by track')
+        self.average_by_track_check = QtWidgets.QCheckBox()
+        self.average_by_track_check.stateChanged.connect(self.average_by_track_changed)
+        layout.addWidget(self.average_by_track_label)
+        layout.addWidget(self.average_by_track_check)
+        return layout
+
+    def average_by_track_changed(self, on):
+        self.average_by_track = bool(on)
+        self.plotWidget.tracks_updated()
 
     def make_cdf_group(self):
         cdf_group = QtWidgets.QGroupBox()
@@ -43,6 +63,7 @@ class SLD_Histogram(QtWidgets.QWidget):
         self.CDF_nlags = QtWidgets.QSpinBox()
         max_track_len = np.max([len(t) for t in self.pynsight_pts.tracks])
         self.CDF_nlags.setRange(1, max_track_len)
+        self.CDF_nlags.valueChanged.connect(self.CDF_nlags_updated)
         layout.addWidget(self.CDF_nlags)
         cdf_group.setLayout(layout)
         return cdf_group
@@ -74,33 +95,16 @@ class SLD_Histogram(QtWidgets.QWidget):
         ExportGroup = QtWidgets.QGroupBox()
         ExportGroup.setTitle('Export Data')
         layout = QtWidgets.QHBoxLayout()
-        select_file_button = QtWidgets.QPushButton('Select file name')
-        self.fnameTextBox = QtWidgets.QLineEdit('')
-        exportButton = QtWidgets.QPushButton('Export mean SLDs')
-        select_file_button.pressed.connect(self.select_file)
-        exportButton.pressed.connect(self.export)
-        CDF_export_button = QtWidgets.QPushButton('Export CDF')
-        CDF_export_button.pressed.connect(self.exportCDF)
-
-
-        layout.addWidget(select_file_button)
-        layout.addWidget(self.fnameTextBox)
+        exportButton = QtWidgets.QPushButton('Export Histogram')
+        exportButton.pressed.connect(self.export_histogram)
         layout.addWidget(exportButton)
-        layout.addWidget(CDF_export_button)
         ExportGroup.setLayout(layout)
         ExportGroup.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         return ExportGroup
 
-    def select_file(self):
-        filename = save_file_gui("Select file name")
-        self.fnameTextBox.setText(filename)
-        print(filename)
-
-    def export(self):
-        filename = self.fnameTextBox.text()
-        if filename == '':
-            g.alert('You must select a filename below before exporting the mean single lag displacements.')
-        else:
+    def export_histogram(self):
+        filename = save_file_gui(prompt="Save Histogram", filetypes='.txt')
+        if filename != '' and filename is not None:
             np.savetxt(filename, self.plotWidget.plot_data, fmt='%f')
 
     def min_track_spinbox_updated(self, val):
@@ -111,14 +115,9 @@ class SLD_Histogram(QtWidgets.QWidget):
         self.plotWidget.max_tracklength = val
         self.plotWidget.tracks_updated()
 
-    def exportCDF(self):
-        nlds2, y, _ = self.calcCDF()
-        data = np.array([nlds2, y]).T
-        filename = self.fnameTextBox.text()
-        if filename == '':
-            g.alert('You must select a filename below before exporting the Cumulative Distribution Function (CDF) of the mean single lag displacements.')
-        else:
-            np.savetxt(filename, data, fmt='%f')
+    def CDF_nlags_updated(self, val):
+        self.plotWidget.CDF_nlags = val
+        self.plotWidget.tracks_updated()
 
     def showCDF(self):
         # self = g.m.pynsight.SLD_histogram
@@ -152,8 +151,8 @@ class SLD_Histogram_Plot(pg.PlotWidget):
         pynsight_pts = g.pynsight.points
         self = SLD_Histogram(pynsight_pts)
         '''
-        super(SLD_Histogram_Plot, self).__init__(title='Mean Single Lag Distance Histogram',
-                                                 labels={'left': 'Count', 'bottom': 'Mean SLD Per Track (microns)'})
+        super(SLD_Histogram_Plot, self).__init__(title='n-Lag Distance Histogram',
+                                                 labels={'left': 'Count', 'bottom': 'n-Lag Displacement (microns)'})
         self.parent = parent
         self.pynsight_pts = pynsight_pts
         self.nTracksTotal = len([t for t in self.pynsight_pts.tracks if len(t)>=2])
@@ -165,6 +164,7 @@ class SLD_Histogram_Plot(pg.PlotWidget):
         self.maximum = 0.
         self.min_tracklength = 2
         self.max_tracklength = np.max([len(t) for t in self.pynsight_pts.tracks])
+        self.CDF_nlags = 1
         self.plot_data = []
         self.bd = None
         self.tracks_updated()
@@ -212,7 +212,7 @@ class SLD_Histogram_Plot(pg.PlotWidget):
                 track_lens.append(len(track))
                 txy = pts[track, :]
                 dt_dx = txy[nlags:, :] - txy[:-nlags, :]
-                dt_dx = dt_dx[dt_dx[:, 0] == nlags] # Remove all lags that were greater than 'nlags', in case we are skipping frames
+                dt_dx = dt_dx[dt_dx[:, 0] == nlags]  # Remove all lags that were greater than 'nlags', in case we are skipping frames
                 if len(dt_dx) == 0:
                     continue
                 nlds = np.sqrt(dt_dx[:, 1] ** 2 + dt_dx[:, 2] ** 2) # slds in pixels
@@ -226,10 +226,25 @@ class SLD_Histogram_Plot(pg.PlotWidget):
         return all_nLDs, nTracks
 
     def tracks_updated(self):
-        mean_SLDs, _ = self.calc_mean_SLDs()
-        self.parent.nTracksLabel.setText('Number of Tracks: {}/{}'.format(len(mean_SLDs), self.nTracksTotal))
-        if len(mean_SLDs) > 0:
-            self.setData(mean_SLDs)
+        if self.parent.average_by_track:
+            mean_SLDs, _ = self.calc_mean_SLDs()
+            self.parent.nTracksLabel.setText('Number of Tracks: {}/{}'.format(len(mean_SLDs), self.nTracksTotal))
+            self.plotItem.setLabel('bottom', 'Mean SLD Per Track (microns)')
+            self.plotItem.setTitle("Mean Single Lag Displacement Histogram")
+            if len(mean_SLDs) > 0:
+                self.setData(mean_SLDs)
+        else:
+            nlags = self.CDF_nlags
+            all_nLDs, _ = self.get_all_nLDs(nlags)
+            self.parent.nTracksLabel.setText('Number of nLDs: {}. Number of Tracks: {}.'.format(len(all_nLDs), self.nTracksTotal))
+            if len(all_nLDs) > 0:
+                if nlags == 1:
+                    self.plotItem.setLabel('bottom', 'Single Lag Displacement (microns)')
+                    self.plotItem.setTitle("Single Lag Displacement Histogram")
+                else:
+                    self.plotItem.setLabel('bottom', '{}-Lag Displacement (microns)'.format(nlags))
+                    self.plotItem.setTitle("{}-Lag Displacement Histogram".format(nlags))
+                self.setData(all_nLDs)
 
     def setData(self, data=np.array([]), n_bins=None):
         if n_bins is None:
@@ -363,9 +378,12 @@ class CDF(QtWidgets.QWidget):
         self.fit_exp_dec_2_button.pressed.connect(self.fit_exp_dec_2)
         self.fit_exp_dec_3_button = QtWidgets.QPushButton('Fit with three component exponential')
         self.fit_exp_dec_3_button.pressed.connect(self.fit_exp_dec_3)
+        self.save_button = QtWidgets.QPushButton('Save Data')
+        self.save_button.pressed.connect(self.save_data)
         self.l.addWidget(self.fit_exp_dec_1_button)
         self.l.addWidget(self.fit_exp_dec_2_button)
         self.l.addWidget(self.fit_exp_dec_3_button)
+        self.l.addWidget(self.save_button)
         self.show()
 
     def fit_exp_dec_1(self):
@@ -376,7 +394,7 @@ class CDF(QtWidgets.QWidget):
         right_bound = np.max([self.left_bound_line.value(), self.right_bound_line.value()])
         xdata = self.squared_SLDs
         ydata = self.y
-        x_fit_mask = (left_bound < xdata) * (xdata < right_bound)
+        x_fit_mask = (left_bound <= xdata) * (xdata <= right_bound)
         xfit = xdata[x_fit_mask]
         popt, pcov = curve_fit(exp_dec, xfit, ydata[x_fit_mask], bounds=([-1.2, 0], [0, 30]))
         tau_fit = popt[1]
@@ -395,7 +413,7 @@ class CDF(QtWidgets.QWidget):
         right_bound = np.max([self.left_bound_line.value(), self.right_bound_line.value()])
         xdata = self.squared_SLDs
         ydata = self.y
-        x_fit_mask = (left_bound < xdata) * (xdata < right_bound)
+        x_fit_mask = (left_bound <= xdata) * (xdata <= right_bound)
         xfit = xdata[x_fit_mask]
         popt, pcov = curve_fit(exp_dec_2, xfit, ydata[x_fit_mask], bounds=([-1, 0, 0], [0, 30, 30]))
         A1 = popt[0]
@@ -419,7 +437,7 @@ class CDF(QtWidgets.QWidget):
         right_bound = np.max([self.left_bound_line.value(), self.right_bound_line.value()])
         xdata = self.squared_SLDs
         ydata = self.y
-        x_fit_mask = (left_bound < xdata) * (xdata < right_bound)
+        x_fit_mask = (left_bound <= xdata) * (xdata <= right_bound)
         xfit = xdata[x_fit_mask]
         popt, pcov = curve_fit(exp_dec_3, xfit, ydata[x_fit_mask], bounds=([-1, -1, 0, 0, 0], [0, 0, 30, 30, 30]))
         A1 = popt[0]
@@ -448,6 +466,15 @@ class CDF(QtWidgets.QWidget):
         t = self.seconds_per_frame * self.nlags
         D = tau / (4 * t)
         return D
+
+    def save_data(self):
+        filename = save_file_gui(prompt="Save CDF", filetypes='.txt')
+        if filename == '' or filename is None:
+            return
+        xdata = self.squared_SLDs
+        ydata = self.y
+        data = np.array([xdata, ydata]).T
+        np.savetxt(filename, data, fmt='%f')
 
 
 

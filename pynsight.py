@@ -228,6 +228,7 @@ class Points(object):
             tracks = self.tracks_by_frame[frame]
             pen = QPen(Qt.green, .4)
             pen.setCosmetic(True)
+            pen.setWidth(2)
             for track_idx in tracks:
                 pathitem = QGraphicsPathItem(self.window.imageview.view)
                 pathitem.setPen(pen)
@@ -401,6 +402,8 @@ class Pynsight():
 
     def loadtracksjson(self):
         filename = open_file_gui("Open tracks from json", filetypes='*.json')
+        if filename is None:
+            return None
         obj_text = codecs.open(filename, 'r', encoding='utf-8').read()
         pts = json.loads(obj_text)
         txy_pts = np.array(pts['txy_pts'])
