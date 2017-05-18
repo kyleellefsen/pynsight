@@ -10,19 +10,17 @@ import sys, os
 from qtpy import QtWidgets, QtGui, QtCore
 from flika.process.BaseProcess import BaseProcess_noPriorWindow, WindowSelector, SliderLabel, CheckBox
 from flika import global_vars as g
-from .gaussianFitting import gaussian
-from .pynsight import Points
+from .gaussianFitting import gaussian  # from plugins.pynsight.gaussianFitting import gaussian
+from .pynsight import Points  # from plugins.pynsight.pynsight import Points
 
 
-def generate_model_particle(x_remander,y_remander, amp):
+def generate_model_particle(x_remainder, y_remainder, amp):
     x = np.arange(7)
     y = np.arange(7)
-    xorigin = 3+x_remander
-    yorigin = 3+y_remander
-    sigma = 1
-    model_particle_wo_noise = gaussian(x[:,None], y[None,:], xorigin, yorigin, sigma, amp)
-    noise = np.random.normal(0, 1, model_particle_wo_noise.shape) * model_particle_wo_noise
-    model_particle = model_particle_wo_noise + noise
+    xorigin = 3 + x_remainder
+    yorigin = 3 + y_remainder
+    sigma = 1.3
+    model_particle = gaussian(x[:, None], y[None, :], xorigin, yorigin, sigma, amp)
     return model_particle
 
 
@@ -30,9 +28,9 @@ def addParticle(A, t, x, y, amp, mx, my):
     assert isinstance(A, np.ndarray)
     x_int = int(np.round(x))
     y_int = int(np.round(y))
-    x_remander = x-x_int
-    y_remander = y-y_int
-    model_particle = generate_model_particle(x_remander,y_remander, amp)
+    x_remainder = x-x_int
+    y_remainder = y-y_int
+    model_particle = generate_model_particle(x_remainder, y_remainder, amp)
     dx, dy = model_particle.shape
     assert dx % 2 == 1
     tt = np.array([t], dtype=np.int)
@@ -88,8 +86,21 @@ def get_accuracy(true_pts, det_pts):
 
 
 class Particle_simulator(BaseProcess_noPriorWindow):
-    """ particle_simulator()
-    This function simulates particles undergoing 2D diffusion
+    """###particle_simulator(rate_of_appearance, rate_of_disappearance, amplitude, D, mt, mx, frame_duration, microns_per_pixel)
+This function simulates particles undergoing 2D brownian diffusion
+
+    Args:
+        rate_of_appearance (float): Particles are created as a poisson process with this rate
+        rate_of_disappearance (float): Particle decay exponentially at this rate
+        amplitude (float): Particle amplitude 
+        D (float): Diffusion coefficient (um^2/s)
+        mt (int): Number of frames for movie
+        mx (int): Movie width and movie height
+        frame_duration (float): The duration between frames
+        microns_per_pixel (float): Width of each pixel
+        
+    Returns:
+        newWindow
     """
     def __init__(self):
         super().__init__()
@@ -181,9 +192,9 @@ class Simulated_particles(QtWidgets.QWidget):
 
         a = random.poisson(rate_of_appearance, mt)
         creation_times = []
-        while len(np.where(a)[0])>0:
+        while len(np.where(a)[0]) > 0:
             creation_times.extend(np.where(a)[0])
-            a[np.where(a)[0]]-=1
+            a[np.where(a)[0]] -= 1
         creation_times = np.array(creation_times)
         creation_times.sort()
         nParticles = len(creation_times)
@@ -191,6 +202,7 @@ class Simulated_particles(QtWidgets.QWidget):
         destroy_times = creation_times + lifetimes
         txy_pts = []
         tracks = []
+        slow = 0
         for i in np.arange(nParticles):
             x = random.random() * mx
             y = random.random() * my
@@ -198,22 +210,37 @@ class Simulated_particles(QtWidgets.QWidget):
             txy_pts.append([t, x, y])
             track = [len(txy_pts)-1]
             t += 1
+            if np.random.random() < .33333:
+                D = 0
+            else:
+                D = self.udc['D']
             while t < destroy_times[i] and t < mt:
+                if D == 0:
+                    if np.random.random() < .02:
+                        D = self.udc['D']
+                else:
+                    if np.random.random() < .01:
+                        D = 0
                 x += random.randn() * np.sqrt( 2* D * frame_duration) / microns_per_pixel
                 y += random.randn() * np.sqrt( 2* D * frame_duration) / microns_per_pixel
                 txy_pts.append([t, x, y])
                 track.append(len(txy_pts)-1)
-                t+=1
+                t += 1
+            if D == 0:
+                slow += 1
             tracks.append(track)
+        print('slow: {}'.format(slow))
+        print('total: {}'.format(len(tracks)))
         txy_pts = np.array(txy_pts)
         points = Points(txy_pts)
         points.tracks = tracks
         points.get_tracks_by_frame()
-        A = random.randn(mt, mx, my)
+        A = np.ones((mt, mx, my)) * 8
         for pt in txy_pts:
             frame, x, y = pt
             A = addParticle(A, frame, x, y, amplitude, mx, my)
 
+        A = np.random.poisson(A, A.shape)
         return A, points
 
     def setupUI(self, particle_window):
