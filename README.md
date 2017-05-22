@@ -22,8 +22,9 @@ data_window = Window(simulated_particles.particle_window.image)
 data_window.setName('Data Window (F/F0)')
 blur_window = gaussian_blur(2, norm_edges=True, keepSourceWindow=True)
 blur_window.setName('Blurred Window')
-binary_window = threshold(.7, keepSourceWindow=True)
+binary_window = threshold(18, keepSourceWindow=True)
 binary_window.setName('Binary Window')
+pynsight.gui()
 
 ```
 
