@@ -16,8 +16,9 @@ To test Pynsight, run the following sample script:
 
 ```python
 from plugins.pynsight.pynsight import *
-A, true_pts = simulate_particles()
-data_window = Window(A)
+from plugins.pynsight.particle_simulator import particle_simulator
+simulated_particles = particle_simulator(.1, .01, 50, .1, 500, 128, .1, .16)
+data_window = Window(simulated_particles.particle_window.image)
 data_window.setName('Data Window (F/F0)')
 blur_window = gaussian_blur(2, norm_edges=True, keepSourceWindow=True)
 blur_window.setName('Blurred Window')
