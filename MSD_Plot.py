@@ -171,6 +171,7 @@ class Track:
         self.length = len(self.track_pts_idx)
         self.all_pts = all_pts
         self.SDs = self.calc_SDs()# Squared displacements
+        self.time_averaged_MSD = self.calc_time_averaged_MSDs()
         if len(track_pts_idx) <= 1:
             self.mean_SLD = None
         else:
@@ -188,11 +189,37 @@ class Track:
         SDs = np.array(SDs)
         return SDs
 
+    def calc_time_averaged_MSDs(self):
+        if len(self.SDs) == 0:
+            return np.array([0])
+        lags = np.arange(1+int(np.max(self.SDs[:, 1])))
+        ddd = [[] for l in lags]
+        for SD in self.SDs:
+            ddd[int(SD[1])].append(SD[0])
+        ddd[0] = [0]
+        d_mean = [[] for lag in ddd]
+        for i, lag in enumerate(ddd):
+            d_mean[i] = np.mean(lag)
+        d_mean = np.array(d_mean)
+        return d_mean
+
+
+
+#
 #MSD_Plot(g.m.pynsight)
 #tracks = [t for t in g.m.pynsight.MSD_plot.plotWidget.tracks if t.length>1]
 #mean_SLDS = np.array([t.mean_SLD for t in tracks])
 #lengths = np.array([t.length for t in tracks])
 #pg.plot(mean_SLDS, lengths, pen=None, symbol='o')  ## setting pen=None disables line drawing
+if __name__ == "__main__":
+    from plugins.pynsight import pynsight
+    from plugins.pynsight.particle_simulator import particle_simulator
+    result = particle_simulator(1, .01, 15, 0, 50, 128, .1, .16)
+    blurred = gaussian_blur(1, keepSourceWindow=True)
+    binary = threshold(13)
+    pynsight.pynsight.gui()
 
-
+    tracks = pynsight.pynsight.MSD_plot.plotWidget.tracks
+    track = tracks[0]
+    track.calc_time_averaged_MSDs()
 

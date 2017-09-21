@@ -15,15 +15,22 @@ Algorithm:
 import numpy as np
 import os
 import json, codecs
+from distutils.version import StrictVersion
 from qtpy.QtCore import QUrl, QRect, QPointF, Qt
 from qtpy.QtGui import QDesktopServices, QIcon, QPainterPath, QPen, QColor
 from qtpy.QtWidgets import QHBoxLayout, QGraphicsPathItem, qApp
 from qtpy import uic
 
+import flika
 from flika import global_vars as g
-from flika.process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
 from flika.window import Window
 from flika.process.file_ import save_file_gui, open_file_gui
+
+flika_version = flika.__version__
+if StrictVersion(flika_version) < StrictVersion('0.2.23'):
+    from flika.process.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
+else:
+    from flika.utils.BaseProcess import BaseProcess, WindowSelector, SliderLabel, CheckBox
 
 from .insight_writer import write_insight_bin
 from .gaussianFitting import fitGaussian, gaussian, generate_gaussian

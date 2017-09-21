@@ -7,8 +7,13 @@ from distutils.version import StrictVersion
 
 import flika
 from flika import global_vars as g
-from flika.process.BaseProcess import BaseDialog, SliderLabel
 from flika.utils.misc import save_file_gui
+
+flika_version = flika.__version__
+if StrictVersion(flika_version) < StrictVersion('0.2.23'):
+    from flika.process.BaseProcess import BaseDialog, SliderLabel
+else:
+    from flika.utils.BaseProcess import BaseDialog, SliderLabel
 
 
 class SLD_Histogram(QtWidgets.QWidget):
