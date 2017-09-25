@@ -92,6 +92,47 @@ def get_accuracy(true_pts, det_pts):
     return linked_pts, false_pos, false_neg
 
 
+def get_diffusion_coefficients(D1, D2, r1, r2, frame_duration, nFrames):
+    """
+    Returns an array of diffusion coefficients for a particle that switches between two diffusion coefficients with rates r1 and r2.
+    frame_duration is how long the interval between each frame is. seconds/frame
+
+            r1
+        -------->
+    D1  <--------  D2
+            r2
+
+    """
+    states = []
+    switch_times = []
+    Ds = np.zeros(nFrames)
+    if r1 == 0:
+        Ds[:] = D1
+        return Ds
+    lifetime = nFrames * frame_duration
+    t = 0  # time in seconds
+    if np.random.uniform() <= r2 / (r1 + r2):  # This is the equilibrium concentration in state D1
+        states.append(1)
+        switch_times.append(t)
+    else:
+        states.append(2)
+        switch_times.append(t)
+    while t < lifetime:
+        if states[-1] == 1:
+            t += np.random.exponential(1/r1)
+            states.append(2)
+        elif states[-1] == 2:
+            t += np.random.exponential(1/r2)
+            states.append(1)
+        switch_times.append(t)
+    switch_times = np.array(switch_times)
+    switch_times = np.round(switch_times/frame_duration).astype(np.int)
+    states = np.array(states).astype(np.float)
+    states[states==1] = D1
+    states[states==2] = D2
+    for i in np.arange(len(switch_times)-1):
+        Ds[switch_times[i]:switch_times[i+1]] = states[i]
+    return Ds
 
 
 class Particle_simulator(BaseProcess_noPriorWindow):
@@ -230,35 +271,27 @@ class Simulated_particles(QtWidgets.QWidget):
         nParticles = len(creation_times)
         lifetimes = random.exponential(1/rate_of_disappearance, nParticles)
         destroy_times = creation_times + lifetimes
+        destroy_times[destroy_times > mt - 1] = mt - 1
+        destroy_times = np.round(destroy_times).astype(np.int)
         txy_pts = []
         tracks = []
-        slow = 0
         for i in np.arange(nParticles):
             x = random.random() * mx
             y = random.random() * my
             t = creation_times[i]
             txy_pts.append([t, x, y])
             track = [len(txy_pts)-1]
-            if r1 > 0:
-                if random.uniform() <= r2 / (r1 + r2): # This is the equilibrium concentration in state D1
-                    D = D1
-                else:
-                    D = D2
-            else:
-                D = D1
-
-            t += 1
-            while t < destroy_times[i] and t < mt:
+            nFrames = destroy_times[i] - creation_times[i]
+            Ds = get_diffusion_coefficients(D1, D2, r1, r2, frame_duration, nFrames)
+            for j in np.arange(nFrames):
+                t = creation_times[i] + 1 + j
+                D = Ds[j]
                 x += random.randn() * np.sqrt(2 * D * frame_duration) / microns_per_pixel
                 y += random.randn() * np.sqrt(2 * D * frame_duration) / microns_per_pixel
                 txy_pts.append([t, x, y])
                 track.append(len(txy_pts)-1)
-                t += 1
-            if D == D2:
-                slow += 1
             tracks.append(track)
-        print('D2: {}'.format(slow))
-        print('total: {}'.format(len(tracks)))
+        print('total particles: {}'.format(len(tracks)))
         txy_pts = np.array(txy_pts)
         points = Points(txy_pts)
         points.tracks = tracks
