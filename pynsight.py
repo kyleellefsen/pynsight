@@ -18,7 +18,8 @@ import json, codecs
 from distutils.version import StrictVersion
 from qtpy.QtCore import QUrl, QRect, QPointF, Qt
 from qtpy.QtGui import QDesktopServices, QIcon, QPainterPath, QPen, QColor
-from qtpy.QtWidgets import QHBoxLayout, QGraphicsPathItem, qApp
+from qtpy.QtWidgets import QHBoxLayout, QGraphicsPathItem
+from qtpy import QtWidgets
 from qtpy import uic
 
 import flika
@@ -137,7 +138,7 @@ def refine_pts(pts, blur_window, sigma, amplitude):
         if old_frame != new_frame:
             old_frame = new_frame
             blur_window.imageview.setCurrentIndex(old_frame)
-            qApp.processEvents()
+            QtWidgets.QApplication.processEvents()
             if halt_current_computation:
                 halt_current_computation = False
                 return new_pts, False
@@ -159,7 +160,7 @@ def refine_pts(pts, blur_window, sigma, amplitude):
 
 class Points(object):
     def __init__(self, txy_pts):
-        self.frames = np.unique(txy_pts[:, 0]).astype(np.int)
+        self.frames = np.unique(txy_pts[:, 0]).astype(int)
         self.txy_pts = txy_pts
         self.window = None
         self.pathitems = []
@@ -215,7 +216,7 @@ class Points(object):
     def get_tracks_by_frame(self):
         tracks_by_frame = [[] for frame in np.arange(np.max(self.frames)+1)]
         for i, track in enumerate(self.tracks):
-            frames = self.txy_pts[track][:,0].astype(np.int)
+            frames = self.txy_pts[track][:,0].astype(int)
             for frame in frames:
                 tracks_by_frame[frame].append(i)
         self.tracks_by_frame = tracks_by_frame

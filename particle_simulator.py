@@ -42,11 +42,11 @@ def addParticle(A, t, x, y, amp, mx, my):
     model_particle = generate_model_particle(x_remainder, y_remainder, amp)
     dx, dy = model_particle.shape
     assert dx % 2 == 1
-    tt = np.array([t], dtype=np.int)
+    tt = np.array([t], dtype=int)
     dx = (dx-1)/2
     dy = (dy-1)/2
-    yy = np.arange(y_int-dy,y_int+dy+1, dtype=np.int)
-    xx = np.arange(x_int-dx,x_int+dx+1, dtype=np.int)
+    yy = np.arange(y_int-dy,y_int+dy+1, dtype=int)
+    xx = np.arange(x_int-dx,x_int+dx+1, dtype=int)
     if np.min(yy)<0 or np.min(xx)<0 or np.max(yy)>=my or np.max(xx)>=mx:
         return A
     A[np.ix_(tt, xx, yy)] = A[np.ix_(tt, xx, yy)] + model_particle
@@ -126,7 +126,7 @@ def get_diffusion_coefficients(D1, D2, r1, r2, frame_duration, nFrames):
             states.append(1)
         switch_times.append(t)
     switch_times = np.array(switch_times)
-    switch_times = np.round(switch_times/frame_duration).astype(np.int)
+    switch_times = np.round(switch_times/frame_duration).astype(int)
     states = np.array(states).astype(np.float)
     states[states==1] = D1
     states[states==2] = D2
@@ -272,7 +272,7 @@ class Simulated_particles(QtWidgets.QWidget):
         lifetimes = random.exponential(1/rate_of_disappearance, nParticles)
         destroy_times = creation_times + lifetimes
         destroy_times[destroy_times > mt - 1] = mt - 1
-        destroy_times = np.round(destroy_times).astype(np.int)
+        destroy_times = np.round(destroy_times).astype(int)
         txy_pts = []
         tracks = []
         for i in np.arange(nParticles):
